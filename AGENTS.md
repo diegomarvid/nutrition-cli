@@ -17,7 +17,7 @@ day in plain language.
   assistant estimates something in prose, label it as an estimate.
 - Personal runtime data belongs in the local SQLite DB, not in this repo:
   profile, aliases, default portions, cached foods, label-derived products,
-  audit history, and meal logs.
+  food preferences, audit history, and meal logs.
 - Do not commit databases, secrets, API keys, private food logs, profile data, or
   package-label photos.
 
@@ -28,12 +28,16 @@ When starting work in this repo, prefer:
 ```bash
 uv run nutrition doctor
 uv run nutrition profile show
+uv run nutrition preference list
 uv run nutrition fdc-status
 ```
 
 If the profile is missing and the user wants meaningful high/low feedback, ask
 for birth date, sex/gender target category, height, weight, and activity level,
 then save it with `nutrition profile set`.
+
+If preferences are sparse and the user is asking for food suggestions, ask what
+they like, dislike, or avoid, then save it with `nutrition preference add`.
 
 ## Logging Meals
 
@@ -49,7 +53,13 @@ When the user tells you what they ate:
    product details.
 5. If the user provides a package label, add it with `nutrition label add` and
    include source/evidence when possible.
-6. After logging, run the relevant report:
+6. Check preferences before giving suggestions:
+
+```bash
+uv run nutrition preference list
+```
+
+7. After logging, run the relevant report:
 
 ```bash
 uv run nutrition day --date YYYY-MM-DD
@@ -97,7 +107,9 @@ For every analysis, use this structure:
    useful, reputable sources. Mark it as "AI judgment", "inference", or
    "research-based opinion".
 5. Separate measured facts from inferred advice.
-6. Give practical food suggestions that fit the user's stated preferences.
+6. Give practical food suggestions that fit the user's stored and stated
+   preferences. Do not suggest disliked or avoided foods unless you explicitly
+   call out why there is no better option.
 
 Example stance:
 
@@ -136,6 +148,20 @@ uv run nutrition audit sources
 
 If an alias or product mapping is wrong, correct it in the local DB and explain
 that future logs will reuse the corrected mapping.
+
+## Preferences
+
+Use preferences as durable local memory for recommendations:
+
+```bash
+uv run nutrition preference add "cheese" --preference like --intensity 4 --context calcium
+uv run nutrition preference add "yogurt" --preference avoid --intensity 5 --notes "User dislikes it"
+uv run nutrition preference list
+```
+
+Preference values are `love`, `like`, `neutral`, `dislike`, and `avoid`.
+Contexts are optional and free-form, for example `calcium`, `omega-3`,
+`breakfast`, or `snacks`.
 
 ## Development
 

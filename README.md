@@ -34,11 +34,11 @@ uv run nutrition init
 
 This creates `~/.nutrition/nutrition.db` by default and initializes all tables:
 `food_aliases`, `meal_logs`, `meal_items`, `foods`, `food_nutrients`, and
-`food_portions`, `user_profiles`, and audit tables for aliases, sources, and
-resolution events. If you run it in an interactive terminal, it can also prompt
-for a local profile used to estimate daily targets. Commands that open the
-database also run the schema/migration setup, but `nutrition init` is the
-explicit first step.
+`food_portions`, `user_profiles`, `food_preferences`, and audit tables for
+aliases, sources, and resolution events. If you run it in an interactive
+terminal, it can also prompt for a local profile used to estimate daily targets.
+Commands that open the database also run the schema/migration setup, but
+`nutrition init` is the explicit first step.
 
 You can set or update the profile later:
 
@@ -120,6 +120,7 @@ When using this repo with an LLM assistant, the assistant should start by checki
 
 ```bash
 uv run nutrition doctor
+uv run nutrition preference list
 ```
 
 If the profile is missing, ask the user for:
@@ -144,6 +145,19 @@ uv run nutrition profile set \
 
 The profile is required for better "high/low" feedback. It is still local
 runtime data and must not be committed.
+
+Before giving food suggestions, the assistant should check local food
+preferences:
+
+```bash
+uv run nutrition preference list
+uv run nutrition preference add "cheese" --preference like --intensity 4 --context calcium
+uv run nutrition preference add "yogurt" --preference avoid --intensity 5 --notes "User dislikes it"
+```
+
+Preferences are local runtime data. They can store foods the user likes,
+dislikes, avoids, or especially prefers in a context such as `calcium`,
+`breakfast`, `snacks`, or `omega-3`.
 
 ## Where the numbers come from
 
@@ -252,6 +266,7 @@ uv run nutrition targets
 uv run nutrition audit log --date 2026-06-24
 uv run nutrition audit resolutions
 uv run nutrition profile show
+uv run nutrition preference list
 uv run nutrition alias list
 ```
 
@@ -263,8 +278,8 @@ uv run nutrition log --yes "comí 500g de muslo de pollo cocido, 1 taza de arroz
 
 ## Add personal data
 
-Personal profile fields, aliases, default portions, cached foods, and meal
-history live in your local SQLite database, not in the repository.
+Personal profile fields, aliases, preferences, default portions, cached foods,
+and meal history live in your local SQLite database, not in the repository.
 
 The profile currently stores birth date, sex/gender target category, height,
 weight, and activity level. Reports use it to estimate calorie targets and to
@@ -285,6 +300,14 @@ Map an alias to a USDA/FDC food:
 uv run nutrition search "white rice cooked"
 uv run nutrition food 2708408
 uv run nutrition alias add "my rice serving" 2708408 --default-quantity-g 390
+```
+
+Store food preferences for future recommendations:
+
+```bash
+uv run nutrition preference add "cheese" --preference like --intensity 4 --context calcium
+uv run nutrition preference add "milk" --preference avoid --intensity 5
+uv run nutrition preference list
 ```
 
 Add a packaged product from its nutrition label:
@@ -325,6 +348,8 @@ The local database stores enough detail to review how a meal became nutrients:
   chosen FDC/local food id, and original item JSON.
 - `food_aliases` stores reusable personal mappings from phrases to FDC/local
   food ids.
+- `food_preferences` stores local likes, dislikes, avoidances, and contextual
+  recommendation notes for assistants.
 - `alias_history` records alias mapping/default-quantity changes.
 - `food_resolution_events` records USDA/manual/local-label resolution events,
   including candidate JSON when USDA search was used.

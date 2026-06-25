@@ -131,6 +131,22 @@ CREATE TABLE IF NOT EXISTS food_sources (
 );
 
 CREATE INDEX IF NOT EXISTS idx_food_sources_fdc ON food_sources(fdc_id);
+
+CREATE TABLE IF NOT EXISTS food_preferences (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  food_name TEXT NOT NULL,
+  normalized_food_name TEXT NOT NULL,
+  preference TEXT NOT NULL,
+  intensity INTEGER NOT NULL DEFAULT 3,
+  context TEXT NOT NULL DEFAULT '',
+  notes TEXT,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  UNIQUE(normalized_food_name, context)
+);
+
+CREATE INDEX IF NOT EXISTS idx_food_preferences_preference ON food_preferences(preference);
+CREATE INDEX IF NOT EXISTS idx_food_preferences_context ON food_preferences(context);
 """
 
 
@@ -441,6 +457,98 @@ def add_food_source(
     conn.commit()
 
 
+def upsert_food_preference(
+    conn: sqlite3.Connection,
+    *,
+    food_name: str,
+    preference: str,
+    intensity: int = 3,
+    context: str | None = None,
+    notes: str | None = None,
+) -> None:
+    normalized = normalize_alias(food_name)
+    normalized_context = normalize_context(context)
+    conn.execute(
+        """
+        INSERT INTO food_preferences(
+          food_name, normalized_food_name, preference, intensity, context,
+          notes, created_at, updated_at
+        )
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT(normalized_food_name, context) DO UPDATE SET
+          food_name = excluded.food_name,
+          preference = excluded.preference,
+          intensity = excluded.intensity,
+          notes = excluded.notes,
+          updated_at = excluded.updated_at
+        """,
+        (
+            food_name.strip(),
+            normalized,
+            preference,
+            intensity,
+            normalized_context,
+            notes,
+            now_iso(),
+            now_iso(),
+        ),
+    )
+    conn.commit()
+
+
+def list_food_preferences(
+    conn: sqlite3.Connection,
+    *,
+    preference: str | None = None,
+    context: str | None = None,
+    limit: int = 100,
+) -> list[sqlite3.Row]:
+    filters = []
+    params: list[Any] = []
+    if preference is not None:
+        filters.append("preference = ?")
+        params.append(preference)
+    if context is not None:
+        filters.append("context = ?")
+        params.append(normalize_context(context))
+    where = f"WHERE {' AND '.join(filters)}" if filters else ""
+    params.append(limit)
+    return list(
+        conn.execute(
+            f"""
+            SELECT * FROM food_preferences
+            {where}
+            ORDER BY
+              CASE preference
+                WHEN 'love' THEN 1
+                WHEN 'like' THEN 2
+                WHEN 'neutral' THEN 3
+                WHEN 'dislike' THEN 4
+                WHEN 'avoid' THEN 5
+                ELSE 6
+              END,
+              intensity DESC,
+              normalized_food_name
+            LIMIT ?
+            """,
+            params,
+        )
+    )
+
+
+def delete_food_preference(conn: sqlite3.Connection, food_name: str, context: str | None = None) -> int:
+    normalized = normalize_alias(food_name)
+    cur = conn.execute(
+        """
+        DELETE FROM food_preferences
+        WHERE normalized_food_name = ? AND context = ?
+        """,
+        (normalized, normalize_context(context)),
+    )
+    conn.commit()
+    return cur.rowcount
+
+
 def list_resolution_events(conn: sqlite3.Connection, limit: int = 20) -> list[sqlite3.Row]:
     return list(
         conn.execute(
@@ -655,3 +763,9 @@ def find_portion_grams(conn: sqlite3.Connection, fdc_id: int, unit: str) -> floa
 
 def normalize_alias(value: str) -> str:
     return " ".join(value.strip().lower().split())
+
+
+def normalize_context(value: str | None) -> str:
+    if value is None:
+        return ""
+    return normalize_alias(value)

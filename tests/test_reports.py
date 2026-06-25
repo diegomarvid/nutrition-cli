@@ -4,12 +4,15 @@ from nutrition_cli.database import (
     add_food_source,
     commit_meal,
     connect,
+    delete_food_preference,
     get_user_profile,
     init_db,
     list_alias_history,
+    list_food_preferences,
     list_food_sources,
     list_meal_items_for_audit,
     list_resolution_events,
+    upsert_food_preference,
     upsert_food_detail,
     upsert_alias,
     upsert_user_profile,
@@ -290,3 +293,50 @@ def test_alias_history_and_food_sources(tmp_path):
     assert history[0]["reason"] == "corrected mapping"
     assert sources[0]["source_ref"] == "/tmp/label.jpg"
     assert "calcium_mg" in sources[0]["label_text"]
+
+
+def test_food_preferences_roundtrip(tmp_path):
+    conn = connect(tmp_path / "nutrition.db")
+    init_db(conn)
+
+    upsert_food_preference(
+        conn,
+        food_name="Queso",
+        preference="like",
+        intensity=4,
+        context="calcium",
+        notes="Good option when avoiding milk/yogurt",
+    )
+    upsert_food_preference(
+        conn,
+        food_name="Yogur",
+        preference="avoid",
+        intensity=5,
+        notes="User dislikes it",
+    )
+
+    calcium = list_food_preferences(conn, context="calcium")
+    avoid = list_food_preferences(conn, preference="avoid")
+
+    assert calcium[0]["food_name"] == "Queso"
+    assert calcium[0]["preference"] == "like"
+    assert calcium[0]["intensity"] == 4
+    assert avoid[0]["food_name"] == "Yogur"
+
+    upsert_food_preference(
+        conn,
+        food_name="queso",
+        preference="love",
+        intensity=5,
+        context="calcium",
+        notes="Best calcium suggestion",
+    )
+    updated = list_food_preferences(conn, context="calcium")
+
+    assert len(updated) == 1
+    assert updated[0]["food_name"] == "queso"
+    assert updated[0]["preference"] == "love"
+    assert updated[0]["notes"] == "Best calcium suggestion"
+
+    assert delete_food_preference(conn, "queso", context="calcium") == 1
+    assert list_food_preferences(conn, context="calcium") == []

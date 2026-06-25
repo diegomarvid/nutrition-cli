@@ -35,6 +35,10 @@ Profile fields such as birth date, sex/gender target category, height, weight,
 and activity level are also local runtime data. They belong in `user_profiles`
 inside the user's SQLite database, not in source code or public seed data.
 
+Food preferences are local runtime data too. Likes, dislikes, avoidances, and
+contextual recommendation notes belong in `food_preferences` and should be
+checked before the assistant suggests foods.
+
 ## Target model
 
 FoodData Central provides food composition, not personal daily targets. Daily
@@ -100,6 +104,7 @@ USDA.
 - `food_nutrients`: cached nutrient values per 100g
 - `food_portions`: cached household measures used to convert cups, pieces, etc. to grams
 - `user_profiles`: local profile used to estimate daily target ranges
+- `food_preferences`: local likes/dislikes/avoidances used by assistants when suggesting foods
 - `food_resolution_events`: records how an alias was resolved, including USDA candidates when available
 - `alias_history`: records alias mapping/default-quantity changes
 - `food_sources`: records local source/evidence rows, such as label photo paths or URLs

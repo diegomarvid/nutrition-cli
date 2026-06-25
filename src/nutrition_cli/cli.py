@@ -17,6 +17,7 @@ from .database import (
     connect,
     cached_food,
     delete_alias,
+    delete_food_preference,
     delete_user_profile,
     food_description,
     get_alias,
@@ -24,10 +25,12 @@ from .database import (
     init_db,
     list_alias_history,
     list_aliases,
+    list_food_preferences,
     list_food_sources,
     list_meal_items_for_audit,
     list_resolution_events,
     log_resolution_event,
+    upsert_food_preference,
     upsert_user_profile,
     upsert_alias,
     upsert_food_detail,
@@ -45,10 +48,12 @@ alias_app = typer.Typer(help="Manage personal food aliases.")
 label_app = typer.Typer(help="Manage local label-based foods.")
 profile_app = typer.Typer(help="Manage the local user profile used for target estimates.")
 audit_app = typer.Typer(help="Inspect local audit trail and mappings.")
+preference_app = typer.Typer(help="Manage local food preferences for recommendations.")
 app.add_typer(alias_app, name="alias")
 app.add_typer(label_app, name="label")
 app.add_typer(profile_app, name="profile")
 app.add_typer(audit_app, name="audit")
+app.add_typer(preference_app, name="preference")
 console = Console()
 
 
@@ -93,6 +98,7 @@ def doctor(
     """Show local configuration and API-key status."""
     conn = open_db(db)
     aliases = len(list_aliases(conn))
+    preferences = len(list_food_preferences(conn))
     profile = get_user_profile(conn)
     conn.close()
     api_key = fdc_api_key()
@@ -101,6 +107,7 @@ def doctor(
     table.add_column("Value")
     table.add_row("DB", str(db))
     table.add_row("Aliases", str(aliases))
+    table.add_row("Preferences", str(preferences))
     table.add_row("Profile", "configured" if profile else "missing (run `nutrition profile set`)")
     table.add_row("FDC key", "DEMO_KEY (testing)" if api_key == "DEMO_KEY" else "configured")
     table.add_row("Model", "assistant in chat; no OpenAI key inside CLI")
@@ -391,6 +398,70 @@ def alias_remove(
     conn = open_db(db)
     count = delete_alias(conn, alias)
     console.print("Removed." if count else "Alias not found.")
+
+
+@preference_app.command("add")
+def preference_add(
+    food_name: str = typer.Argument(..., help="Food, ingredient, product, or meal style."),
+    preference: str = typer.Option(..., "--preference", "-p", help="love, like, neutral, dislike, or avoid."),
+    intensity: int = typer.Option(3, min=1, max=5, help="Strength from 1 to 5."),
+    context: str | None = typer.Option(None, help="Optional context, such as calcium, breakfast, snacks, or general."),
+    notes: str | None = typer.Option(None, help="Optional note for future assistants."),
+    db: Path = typer.Option(default_factory=db_option, help="SQLite database path."),
+) -> None:
+    """Save a local food preference used by assistants when suggesting foods."""
+    conn = open_db(db)
+    normalized_preference = normalize_preference(preference)
+    upsert_food_preference(
+        conn,
+        food_name=food_name,
+        preference=normalized_preference,
+        intensity=intensity,
+        context=context,
+        notes=notes,
+    )
+    context_label = f" ({context})" if context else ""
+    console.print(f"Preference saved: [bold]{food_name}[/]{context_label} -> {normalized_preference} / {intensity}.")
+
+
+@preference_app.command("list")
+def preference_list(
+    preference: str | None = typer.Option(None, "--preference", "-p", help="Filter by love/like/neutral/dislike/avoid."),
+    context: str | None = typer.Option(None, help="Filter by context."),
+    limit: int = typer.Option(100, min=1, max=500),
+    db: Path = typer.Option(default_factory=db_option, help="SQLite database path."),
+) -> None:
+    """List local food preferences for recommendation planning."""
+    conn = open_db(db)
+    normalized_preference = normalize_preference(preference) if preference is not None else None
+    rows = list_food_preferences(conn, preference=normalized_preference, context=context, limit=limit)
+    table = Table(show_header=True, header_style="bold")
+    table.add_column("Food")
+    table.add_column("Preference")
+    table.add_column("Intensity", justify="right")
+    table.add_column("Context")
+    table.add_column("Notes")
+    for row in rows:
+        table.add_row(
+            row["food_name"],
+            row["preference"],
+            str(row["intensity"]),
+            row["context"] or "general",
+            row["notes"] or "",
+        )
+    console.print(table)
+
+
+@preference_app.command("remove")
+def preference_remove(
+    food_name: str,
+    context: str | None = typer.Option(None, help="Optional context. Omit for general preference."),
+    db: Path = typer.Option(default_factory=db_option, help="SQLite database path."),
+) -> None:
+    """Remove a local food preference."""
+    conn = open_db(db)
+    count = delete_food_preference(conn, food_name, context=context)
+    console.print("Removed." if count else "Preference not found.")
 
 
 @label_app.command("add")
@@ -743,6 +814,34 @@ def label_text_from_args(
 
 def format_optional_value(value: float | None) -> str:
     return "" if value is None else f"{value:g}"
+
+
+def normalize_preference(value: str) -> str:
+    normalized = " ".join(value.strip().lower().split())
+    aliases = {
+        "love": "love",
+        "me encanta": "love",
+        "favorito": "love",
+        "favorite": "love",
+        "like": "like",
+        "likes": "like",
+        "me gusta": "like",
+        "gusta": "like",
+        "neutral": "neutral",
+        "ok": "neutral",
+        "indiferente": "neutral",
+        "dislike": "dislike",
+        "no me gusta": "dislike",
+        "no gusta": "dislike",
+        "avoid": "avoid",
+        "evitar": "avoid",
+        "odio": "avoid",
+        "hate": "avoid",
+    }
+    try:
+        return aliases[normalized]
+    except KeyError as exc:
+        raise typer.BadParameter("Preference must be love, like, neutral, dislike, or avoid.") from exc
 
 
 @profile_app.command("set")
