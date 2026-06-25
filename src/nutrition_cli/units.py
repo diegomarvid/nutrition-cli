@@ -64,7 +64,7 @@ FALLBACK_GRAMS = {
 ALIAS_UNIT_GRAMS = [
     (re.compile(r"\b(manzana|apple|apples)\b"), 182.0),
     (re.compile(r"\b(huevo|huevos|egg|eggs)\b"), 50.0),
-    (re.compile(r"\b(banana|bananas|platano|plátano)\b"), 118.0),
+    (re.compile(r"\b(pera|peras|pear|pears)\b"), 178.0),
     (re.compile(r"\b(muslo|muslos|thigh|thighs|drumstick|drumsticks)\b"), 125.0),
 ]
 

@@ -157,7 +157,9 @@ uv run nutrition preference add "yogurt" --preference avoid --intensity 5 --note
 
 Preferences are local runtime data. They can store foods the user likes,
 dislikes, avoids, or especially prefers in a context such as `calcium`,
-`breakfast`, `snacks`, or `omega-3`.
+`breakfast`, `snacks`, `omega-3`, `allergy`, or `intolerance`. Avoid
+preferences with allergy/intolerance context or notes should be treated as hard
+recommendation constraints by assistants.
 
 ## Where the numbers come from
 
@@ -307,6 +309,7 @@ Store food preferences for future recommendations:
 ```bash
 uv run nutrition preference add "cheese" --preference like --intensity 4 --context calcium
 uv run nutrition preference add "milk" --preference avoid --intensity 5
+uv run nutrition preference add "example allergen" --preference avoid --intensity 5 --context allergy
 uv run nutrition preference list
 ```
 
@@ -348,8 +351,8 @@ The local database stores enough detail to review how a meal became nutrients:
   chosen FDC/local food id, and original item JSON.
 - `food_aliases` stores reusable personal mappings from phrases to FDC/local
   food ids.
-- `food_preferences` stores local likes, dislikes, avoidances, and contextual
-  recommendation notes for assistants.
+- `food_preferences` stores local likes, dislikes, avoidances, hard allergy or
+  intolerance constraints, and contextual recommendation notes for assistants.
 - `alias_history` records alias mapping/default-quantity changes.
 - `food_resolution_events` records USDA/manual/local-label resolution events,
   including candidate JSON when USDA search was used.

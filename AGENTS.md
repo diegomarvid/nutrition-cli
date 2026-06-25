@@ -38,6 +38,8 @@ then save it with `nutrition profile set`.
 
 If preferences are sparse and the user is asking for food suggestions, ask what
 they like, dislike, or avoid, then save it with `nutrition preference add`.
+Treat preferences with `preference=avoid` and allergy/intolerance context or
+notes as hard constraints, not taste preferences.
 
 ## Logging Meals
 
@@ -109,7 +111,9 @@ For every analysis, use this structure:
 5. Separate measured facts from inferred advice.
 6. Give practical food suggestions that fit the user's stored and stated
    preferences. Do not suggest disliked or avoided foods unless you explicitly
-   call out why there is no better option.
+   call out why there is no better option. Allergy or intolerance avoids are
+   stronger: do not suggest them unless the user explicitly overrides that
+   constraint.
 
 Example stance:
 
@@ -161,7 +165,11 @@ uv run nutrition preference list
 
 Preference values are `love`, `like`, `neutral`, `dislike`, and `avoid`.
 Contexts are optional and free-form, for example `calcium`, `omega-3`,
-`breakfast`, or `snacks`.
+`breakfast`, `snacks`, `allergy`, or `intolerance`.
+
+If an `avoid` preference has allergy/intolerance context or notes, treat it as a
+safety constraint. Prefer safe alternatives and ask before recommending related
+foods that may carry the same concern.
 
 ## Development
 

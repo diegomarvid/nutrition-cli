@@ -23,16 +23,16 @@ def test_parse_common_spanish_log():
 
 
 def test_parse_count_items():
-    meal = parse_with_rules("hoy comí 4 huevos y 2 bananas")
+    meal = parse_with_rules("hoy comí 4 huevos y 2 peras")
 
     assert meal.items[0].food_alias == "huevos"
     assert meal.items[0].quantity == 4
     assert meal.items[0].unit == "unit"
-    assert meal.items[1].food_alias == "bananas"
+    assert meal.items[1].food_alias == "peras"
     assert meal.items[1].quantity == 2
 
 
 def test_parse_meal_type():
-    meal = parse_with_rules("merendé 2 bananas")
+    meal = parse_with_rules("merendé 2 peras")
 
     assert meal.meal_type == "snack"
