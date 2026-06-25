@@ -116,10 +116,29 @@ nutrients: do not invent numeric totals, but do not ignore important gaps. It
 also requires a final sanity check of quantities, food mappings, coverage, and
 outliers before turning the CLI table into a spoken report.
 
+The intended flow is:
+
+1. The user describes food in natural language.
+2. The assistant turns that into structured meal JSON.
+3. The CLI stores the log locally, resolves foods through aliases, local labels,
+   or USDA FoodData Central, and computes source-based nutrient totals.
+4. The assistant reads the profile, preferences, daily report, and audit trail
+   as evidence.
+5. The assistant does a final judgment pass before answering: quantities,
+   cooked/raw state, bones, drained weights, duplicate items, food mappings,
+   missing nutrients, partial coverage, and outliers should all make sense.
+6. The final summary separates measured facts from uncertainty and AI judgment,
+   then gives practical recommendations that fit the user's preferences.
+
+The CLI is deliberately not the final narrator. It gives the assistant a
+structured evidence packet; the assistant is responsible for noticing when the
+evidence is incomplete, suspicious, or inconsistent with the user's description.
+
 When using this repo with an LLM assistant, the assistant should start by checking:
 
 ```bash
 uv run nutrition doctor
+uv run nutrition profile show
 uv run nutrition preference list
 ```
 
@@ -160,6 +179,15 @@ dislikes, avoids, or especially prefers in a context such as `calcium`,
 `breakfast`, `snacks`, `omega-3`, `allergy`, or `intolerance`. Avoid
 preferences with allergy/intolerance context or notes should be treated as hard
 recommendation constraints by assistants.
+
+Recommendation criteria should be preference-aware:
+
+- Prefer foods the user likes or has accepted before.
+- Avoid foods marked `dislike` unless there is a clear reason to mention them.
+- Never recommend `avoid` foods with allergy/intolerance context unless the user
+  explicitly overrides that constraint.
+- If a likely recommendation conflicts with preferences, say so and offer a
+  safer alternative.
 
 ## Where the numbers come from
 
@@ -228,6 +256,19 @@ The CLI report is an evidence packet for the assistant, not the final user-facin
 analysis. Assistants should sanity-check quantities, mappings, coverage, and
 outliers before summarizing; if the table looks inconsistent with the user's
 description, correct or flag it rather than repeating it blindly.
+
+A good daily summary should usually cover:
+
+- what was clearly high, low, or on target according to the measured report
+- important nutrients that are `unknown` or only partially covered
+- any suspicious input that may change the conclusion, such as a raw/cooked
+  mismatch or a duplicated portion
+- practical next-meal or next-day suggestions shaped by the stored profile,
+  targets, allergies/intolerances, and food preferences
+
+Numeric totals should stay tied to the CLI's sources. When the assistant adds
+nutrition knowledge beyond the table, it should label that part as judgment,
+inference, or research-based opinion.
 
 Current strategy for missing nutrient data:
 
