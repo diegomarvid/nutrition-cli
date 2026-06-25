@@ -34,10 +34,11 @@ uv run nutrition init
 
 This creates `~/.nutrition/nutrition.db` by default and initializes all tables:
 `food_aliases`, `meal_logs`, `meal_items`, `foods`, `food_nutrients`, and
-`food_portions`, and `user_profiles`. If you run it in an interactive terminal,
-it can also prompt for a local profile used to estimate daily targets. Commands
-that open the database also run the schema/migration setup, but `nutrition init`
-is the explicit first step.
+`food_portions`, `user_profiles`, and audit tables for aliases, sources, and
+resolution events. If you run it in an interactive terminal, it can also prompt
+for a local profile used to estimate daily targets. Commands that open the
+database also run the schema/migration setup, but `nutrition init` is the
+explicit first step.
 
 You can set or update the profile later:
 
@@ -221,6 +222,8 @@ uv run nutrition log "comí 500g de muslo de pollo cocido con piel, 1 taza de ar
 uv run nutrition day
 uv run nutrition week
 uv run nutrition targets
+uv run nutrition audit log --date 2026-06-24
+uv run nutrition audit resolutions
 uv run nutrition profile show
 uv run nutrition alias list
 ```
@@ -269,7 +272,56 @@ uv run nutrition label add "my canned corn" \
   --fiber 3.8 \
   --sodium 179 \
   --default-quantity-g 285 \
+  --source-ref /absolute/path/to/label-photo.jpg \
   --alias "my corn can"
+```
+
+## Audit trail
+
+The local database stores enough detail to review how a meal became nutrients:
+
+- `meal_logs` stores the date, raw text, parsed JSON, confidence, and optional
+  top-level meal type.
+- `meal_items` stores each structured item, optional item-level meal type
+  (`breakfast`, `lunch`, `snack`, `dinner`), quantity, grams, preparation,
+  chosen FDC/local food id, and original item JSON.
+- `food_aliases` stores reusable personal mappings from phrases to FDC/local
+  food ids.
+- `alias_history` records alias mapping/default-quantity changes.
+- `food_resolution_events` records USDA/manual/local-label resolution events,
+  including candidate JSON when USDA search was used.
+- `foods.raw_json` stores the raw USDA/local food payload used for nutrients.
+- `food_sources` stores explicit source/evidence records for local labels, such
+  as a package-photo path or source URL.
+
+Useful audit commands:
+
+```bash
+uv run nutrition audit log --date 2026-06-24
+uv run nutrition audit log --ending 2026-06-24
+uv run nutrition audit resolutions --limit 50
+uv run nutrition audit alias-history --alias "my corn can"
+uv run nutrition audit sources
+```
+
+Audit tables start recording from the point this version is used. Older local
+databases can still show past logged items because `meal_logs`, `meal_items`,
+`foods`, and `food_nutrients` already existed, but they will not have historical
+resolution events or alias-history rows for decisions made before the audit
+tables existed.
+
+When logging through an assistant, prefer item-level `meal_type` in the JSON if
+the user describes a whole day:
+
+```json
+{
+  "raw_text": "lunch chicken and rice; snack apple",
+  "items": [
+    {"food_alias": "chicken thigh cooked with skin", "meal_type": "lunch", "quantity_g": 250},
+    {"food_alias": "white rice cooked", "meal_type": "lunch", "quantity_g": 200},
+    {"food_alias": "apple", "meal_type": "snack", "quantity": 1, "unit": "unit"}
+  ]
+}
 ```
 
 ## Useful env vars

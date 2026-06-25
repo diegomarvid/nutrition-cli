@@ -24,6 +24,7 @@ CREATE TABLE IF NOT EXISTS food_aliases (
 CREATE TABLE IF NOT EXISTS meal_logs (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   date TEXT NOT NULL,
+  meal_type TEXT,
   raw_text TEXT NOT NULL,
   parsed_json TEXT NOT NULL,
   confidence REAL,
@@ -34,6 +35,7 @@ CREATE TABLE IF NOT EXISTS meal_items (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   meal_log_id INTEGER NOT NULL REFERENCES meal_logs(id) ON DELETE CASCADE,
   food_alias TEXT NOT NULL,
+  meal_type TEXT,
   fdc_id INTEGER,
   quantity REAL,
   quantity_unit TEXT,
@@ -88,6 +90,47 @@ CREATE TABLE IF NOT EXISTS user_profiles (
   activity_level TEXT,
   updated_at TEXT NOT NULL
 );
+
+CREATE TABLE IF NOT EXISTS food_resolution_events (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  meal_log_id INTEGER REFERENCES meal_logs(id) ON DELETE SET NULL,
+  meal_item_id INTEGER REFERENCES meal_items(id) ON DELETE SET NULL,
+  alias TEXT NOT NULL,
+  source TEXT NOT NULL,
+  chosen_fdc_id INTEGER,
+  chosen_description TEXT,
+  candidates_json TEXT,
+  reason TEXT,
+  created_at TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_food_resolution_alias ON food_resolution_events(alias);
+CREATE INDEX IF NOT EXISTS idx_food_resolution_fdc ON food_resolution_events(chosen_fdc_id);
+
+CREATE TABLE IF NOT EXISTS alias_history (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  alias TEXT NOT NULL,
+  old_fdc_id INTEGER,
+  new_fdc_id INTEGER,
+  old_default_quantity_g REAL,
+  new_default_quantity_g REAL,
+  reason TEXT,
+  created_at TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_alias_history_alias ON alias_history(alias);
+
+CREATE TABLE IF NOT EXISTS food_sources (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  fdc_id INTEGER NOT NULL,
+  source_type TEXT NOT NULL,
+  source_ref TEXT,
+  label_text TEXT,
+  raw_payload TEXT,
+  created_at TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_food_sources_fdc ON food_sources(fdc_id);
 """
 
 
@@ -116,6 +159,19 @@ def ensure_schema_migrations(conn: sqlite3.Connection) -> None:
     }
     if "default_quantity_g" not in alias_columns:
         conn.execute("ALTER TABLE food_aliases ADD COLUMN default_quantity_g REAL")
+    meal_log_columns = table_columns(conn, "meal_logs")
+    if "meal_type" not in meal_log_columns:
+        conn.execute("ALTER TABLE meal_logs ADD COLUMN meal_type TEXT")
+    meal_item_columns = table_columns(conn, "meal_items")
+    if "meal_type" not in meal_item_columns:
+        conn.execute("ALTER TABLE meal_items ADD COLUMN meal_type TEXT")
+
+
+def table_columns(conn: sqlite3.Connection, table_name: str) -> set[str]:
+    return {
+        row["name"]
+        for row in conn.execute(f"PRAGMA table_info({table_name})").fetchall()
+    }
 
 
 def get_user_profile(conn: sqlite3.Connection) -> UserProfile | None:
@@ -176,7 +232,10 @@ def upsert_alias(
     default_unit: str | None = None,
     default_quantity_g: float | None = None,
     notes: str | None = None,
+    reason: str | None = None,
 ) -> None:
+    normalized_alias = normalize_alias(alias)
+    existing = get_alias(conn, normalized_alias)
     conn.execute(
         """
         INSERT INTO food_aliases(alias, fdc_id, default_unit, default_quantity_g, notes, created_at)
@@ -187,13 +246,64 @@ def upsert_alias(
           default_quantity_g = excluded.default_quantity_g,
           notes = excluded.notes
         """,
-        (normalize_alias(alias), fdc_id, default_unit, default_quantity_g, notes, now_iso()),
+        (normalized_alias, fdc_id, default_unit, default_quantity_g, notes, now_iso()),
     )
+    if alias_changed(existing, fdc_id, default_quantity_g):
+        conn.execute(
+            """
+            INSERT INTO alias_history(
+              alias, old_fdc_id, new_fdc_id, old_default_quantity_g,
+              new_default_quantity_g, reason, created_at
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                normalized_alias,
+                existing["fdc_id"] if existing else None,
+                fdc_id,
+                existing["default_quantity_g"] if existing else None,
+                default_quantity_g,
+                reason,
+                now_iso(),
+            ),
+        )
     conn.commit()
 
 
+def alias_changed(existing: sqlite3.Row | None, fdc_id: int, default_quantity_g: float | None) -> bool:
+    if existing is None:
+        return True
+    if int(existing["fdc_id"]) != int(fdc_id):
+        return True
+    old_default = existing["default_quantity_g"]
+    if old_default is None and default_quantity_g is None:
+        return False
+    if old_default is None or default_quantity_g is None:
+        return True
+    return float(old_default) != float(default_quantity_g)
+
+
 def delete_alias(conn: sqlite3.Connection, alias: str) -> int:
-    cur = conn.execute("DELETE FROM food_aliases WHERE alias = ?", (normalize_alias(alias),))
+    normalized = normalize_alias(alias)
+    existing = get_alias(conn, normalized)
+    cur = conn.execute("DELETE FROM food_aliases WHERE alias = ?", (normalized,))
+    if existing is not None and cur.rowcount:
+        conn.execute(
+            """
+            INSERT INTO alias_history(
+              alias, old_fdc_id, new_fdc_id, old_default_quantity_g,
+              new_default_quantity_g, reason, created_at
+            )
+            VALUES (?, ?, NULL, ?, NULL, ?, ?)
+            """,
+            (
+                normalized,
+                existing["fdc_id"],
+                existing["default_quantity_g"],
+                "alias removed",
+                now_iso(),
+            ),
+        )
     conn.commit()
     return cur.rowcount
 
@@ -205,10 +315,10 @@ def list_aliases(conn: sqlite3.Connection) -> list[sqlite3.Row]:
 def insert_meal_log(conn: sqlite3.Connection, meal: ParsedMeal, log_date: str) -> int:
     cur = conn.execute(
         """
-        INSERT INTO meal_logs(date, raw_text, parsed_json, confidence, created_at)
-        VALUES (?, ?, ?, ?, ?)
+        INSERT INTO meal_logs(date, meal_type, raw_text, parsed_json, confidence, created_at)
+        VALUES (?, ?, ?, ?, ?, ?)
         """,
-        (log_date, meal.raw_text, meal.as_db_json(), meal.confidence, now_iso()),
+        (log_date, meal.meal_type, meal.raw_text, meal.as_db_json(), meal.confidence, now_iso()),
     )
     return int(cur.lastrowid)
 
@@ -219,18 +329,20 @@ def insert_meal_item(
     item: ParsedItem,
     fdc_id: int | None,
     quantity_g: float | None,
-) -> None:
-    conn.execute(
+    default_meal_type: str | None = None,
+) -> int:
+    cur = conn.execute(
         """
         INSERT INTO meal_items(
-          meal_log_id, food_alias, fdc_id, quantity, quantity_unit, quantity_g,
+          meal_log_id, food_alias, meal_type, fdc_id, quantity, quantity_unit, quantity_g,
           preparation, confidence, raw_item_json
         )
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
         (
             meal_log_id,
             normalize_alias(item.food_alias),
+            item.meal_type or default_meal_type,
             fdc_id,
             item.quantity,
             item.unit,
@@ -240,6 +352,7 @@ def insert_meal_item(
             item.model_dump_json(),
         ),
     )
+    return int(cur.lastrowid)
 
 
 def commit_meal(
@@ -250,9 +363,176 @@ def commit_meal(
 ) -> int:
     meal_log_id = insert_meal_log(conn, meal, log_date)
     for item, fdc_id, quantity_g in resolved_items:
-        insert_meal_item(conn, meal_log_id, item, fdc_id, quantity_g)
+        meal_item_id = insert_meal_item(conn, meal_log_id, item, fdc_id, quantity_g, default_meal_type=meal.meal_type)
+        log_resolution_event(
+            conn,
+            meal_log_id=meal_log_id,
+            meal_item_id=meal_item_id,
+            alias=item.food_alias,
+            source="meal-log",
+            chosen_fdc_id=fdc_id,
+            reason="meal item saved",
+            commit=False,
+        )
     conn.commit()
     return meal_log_id
+
+
+def log_resolution_event(
+    conn: sqlite3.Connection,
+    *,
+    alias: str,
+    source: str,
+    chosen_fdc_id: int | None,
+    chosen_description: str | None = None,
+    candidates: list[dict[str, Any]] | None = None,
+    reason: str | None = None,
+    meal_log_id: int | None = None,
+    meal_item_id: int | None = None,
+    commit: bool = True,
+) -> None:
+    conn.execute(
+        """
+        INSERT INTO food_resolution_events(
+          meal_log_id, meal_item_id, alias, source, chosen_fdc_id,
+          chosen_description, candidates_json, reason, created_at
+        )
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """,
+        (
+            meal_log_id,
+            meal_item_id,
+            normalize_alias(alias),
+            source,
+            chosen_fdc_id,
+            chosen_description,
+            json.dumps(candidates, ensure_ascii=False) if candidates is not None else None,
+            reason,
+            now_iso(),
+        ),
+    )
+    if commit:
+        conn.commit()
+
+
+def add_food_source(
+    conn: sqlite3.Connection,
+    *,
+    fdc_id: int,
+    source_type: str,
+    source_ref: str | None = None,
+    label_text: str | None = None,
+    raw_payload: dict[str, Any] | None = None,
+) -> None:
+    conn.execute(
+        """
+        INSERT INTO food_sources(fdc_id, source_type, source_ref, label_text, raw_payload, created_at)
+        VALUES (?, ?, ?, ?, ?, ?)
+        """,
+        (
+            fdc_id,
+            source_type,
+            source_ref,
+            label_text,
+            json.dumps(raw_payload, ensure_ascii=False) if raw_payload is not None else None,
+            now_iso(),
+        ),
+    )
+    conn.commit()
+
+
+def list_resolution_events(conn: sqlite3.Connection, limit: int = 20) -> list[sqlite3.Row]:
+    return list(
+        conn.execute(
+            """
+            SELECT * FROM food_resolution_events
+            ORDER BY id DESC
+            LIMIT ?
+            """,
+            (limit,),
+        )
+    )
+
+
+def list_alias_history(conn: sqlite3.Connection, alias: str | None = None, limit: int = 50) -> list[sqlite3.Row]:
+    if alias:
+        return list(
+            conn.execute(
+                """
+                SELECT * FROM alias_history
+                WHERE alias = ?
+                ORDER BY id DESC
+                LIMIT ?
+                """,
+                (normalize_alias(alias), limit),
+            )
+        )
+    return list(
+        conn.execute(
+            """
+            SELECT * FROM alias_history
+            ORDER BY id DESC
+            LIMIT ?
+            """,
+            (limit,),
+        )
+    )
+
+
+def list_food_sources(conn: sqlite3.Connection, fdc_id: int | None = None, limit: int = 50) -> list[sqlite3.Row]:
+    if fdc_id is not None:
+        return list(
+            conn.execute(
+                """
+                SELECT * FROM food_sources
+                WHERE fdc_id = ?
+                ORDER BY id DESC
+                LIMIT ?
+                """,
+                (fdc_id, limit),
+            )
+        )
+    return list(
+        conn.execute(
+            """
+            SELECT * FROM food_sources
+            ORDER BY id DESC
+            LIMIT ?
+            """,
+            (limit,),
+        )
+    )
+
+
+def list_meal_items_for_audit(
+    conn: sqlite3.Connection,
+    start_date: str,
+    end_date: str,
+) -> list[sqlite3.Row]:
+    return list(
+        conn.execute(
+            """
+            SELECT
+              ml.date,
+              ml.id AS meal_log_id,
+              mi.id AS meal_item_id,
+              COALESCE(mi.meal_type, ml.meal_type, '') AS meal_type,
+              mi.food_alias,
+              mi.quantity,
+              mi.quantity_unit,
+              mi.quantity_g,
+              mi.fdc_id,
+              f.description,
+              f.data_type
+            FROM meal_items mi
+            JOIN meal_logs ml ON ml.id = mi.meal_log_id
+            LEFT JOIN foods f ON f.fdc_id = mi.fdc_id
+            WHERE ml.date >= ? AND ml.date <= ?
+            ORDER BY ml.date, meal_type, mi.id
+            """,
+            (start_date, end_date),
+        )
+    )
 
 
 def cached_food(conn: sqlite3.Connection, fdc_id: int) -> sqlite3.Row | None:

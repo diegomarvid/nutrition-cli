@@ -55,9 +55,30 @@ ACTIVITY_ALIASES = {
     "muy activa": "very-active",
 }
 
+MEAL_TYPE_ALIASES = {
+    "breakfast": "breakfast",
+    "desayuno": "breakfast",
+    "desayune": "breakfast",
+    "desayuné": "breakfast",
+    "lunch": "lunch",
+    "almuerzo": "lunch",
+    "almorce": "lunch",
+    "almorcé": "lunch",
+    "comida": "lunch",
+    "snack": "snack",
+    "merienda": "snack",
+    "merende": "snack",
+    "merendé": "snack",
+    "dinner": "dinner",
+    "cena": "dinner",
+    "cene": "dinner",
+    "cené": "dinner",
+}
+
 
 class ParsedItem(BaseModel):
     food_alias: str = Field(description="User-facing food name, preferably in the user's language.")
+    meal_type: str | None = Field(default=None, description="breakfast, lunch, snack, or dinner when known.")
     fdc_id: int | None = Field(default=None, description="Optional USDA FoodData Central id when already known.")
     quantity: float | None = Field(default=None, description="Numeric quantity as spoken by the user.")
     unit: str | None = Field(default=None, description="Unit for quantity, for example g, cup, unit.")
@@ -78,13 +99,24 @@ class ParsedItem(BaseModel):
             return None
         return " ".join(value.strip().lower().split())
 
+    @field_validator("meal_type")
+    @classmethod
+    def normalize_meal_type(cls, value: str | None) -> str | None:
+        return normalize_meal_type(value)
+
 
 class ParsedMeal(BaseModel):
     raw_text: str
     date: Date | None = None
+    meal_type: str | None = Field(default=None, description="Default meal type for all items when applicable.")
     items: list[ParsedItem]
     confidence: float = Field(default=0.6, ge=0, le=1)
     needs_clarification: list[str] = Field(default_factory=list)
+
+    @field_validator("meal_type")
+    @classmethod
+    def normalize_meal_type(cls, value: str | None) -> str | None:
+        return normalize_meal_type(value)
 
     def as_db_json(self) -> str:
         return self.model_dump_json()
@@ -167,3 +199,14 @@ class UserProfile(BaseModel):
         if (day.month, day.day) < (self.birth_date.month, self.birth_date.day):
             years -= 1
         return years
+
+
+def normalize_meal_type(value: str | None) -> str | None:
+    if value is None:
+        return None
+    normalized = " ".join(value.strip().lower().split())
+    if not normalized:
+        return None
+    if normalized not in MEAL_TYPE_ALIASES:
+        raise ValueError("meal_type must be breakfast, lunch, snack, or dinner")
+    return MEAL_TYPE_ALIASES[normalized]

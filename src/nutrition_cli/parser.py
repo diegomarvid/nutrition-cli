@@ -89,6 +89,7 @@ def parse_meal(text: str, forced_date: date | None = None) -> ParsedMeal:
 
 
 def parse_with_rules(text: str, forced_date: date | None = None) -> ParsedMeal:
+    meal_type = detect_meal_type(text)
     cleaned = LEADING_NOISE.sub("", text.strip())
     parts = split_items(cleaned)
     items = [parse_item(part) for part in parts if part.strip()]
@@ -98,10 +99,24 @@ def parse_with_rules(text: str, forced_date: date | None = None) -> ParsedMeal:
     return ParsedMeal(
         raw_text=text,
         date=forced_date,
+        meal_type=meal_type,
         items=items,
         confidence=0.55 if items else 0.1,
         needs_clarification=needs,
     )
+
+
+def detect_meal_type(text: str) -> str | None:
+    normalized = strip_accents(text.lower())
+    if re.search(r"\b(desayune|desayuno|breakfast)\b", normalized):
+        return "breakfast"
+    if re.search(r"\b(almorce|almuerzo|lunch)\b", normalized):
+        return "lunch"
+    if re.search(r"\b(merende|merienda|snack)\b", normalized):
+        return "snack"
+    if re.search(r"\b(cene|cena|dinner)\b", normalized):
+        return "dinner"
+    return None
 
 
 def split_items(text: str) -> list[str]:

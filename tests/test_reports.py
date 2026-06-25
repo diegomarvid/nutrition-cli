@@ -1,11 +1,17 @@
 from datetime import date
 
 from nutrition_cli.database import (
+    add_food_source,
     commit_meal,
     connect,
     get_user_profile,
     init_db,
+    list_alias_history,
+    list_food_sources,
+    list_meal_items_for_audit,
+    list_resolution_events,
     upsert_food_detail,
+    upsert_alias,
     upsert_user_profile,
 )
 from nutrition_cli.models import ParsedItem, ParsedMeal, UserProfile
@@ -39,6 +45,37 @@ def test_report_aggregates_per_100g(tmp_path):
     assert report.totals["208"] == 400
     assert report.coverage["203"].known_items == 1
     assert report.coverage["301"].known_items == 0
+
+
+def test_meal_type_is_stored_for_audit(tmp_path):
+    conn = connect(tmp_path / "nutrition.db")
+    init_db(conn)
+    upsert_food_detail(
+        conn,
+        {
+            "fdcId": 1,
+            "description": "Test rice",
+            "foodNutrients": [
+                {"nutrient": {"number": "208", "id": 1008, "name": "Energy", "unitName": "kcal"}, "amount": 100},
+            ],
+        },
+    )
+    meal = ParsedMeal(
+        raw_text="lunch rice",
+        date=date(2026, 6, 24),
+        meal_type="lunch",
+        items=[ParsedItem(food_alias="rice", quantity_g=100)],
+    )
+
+    commit_meal(conn, meal, "2026-06-24", [(meal.items[0], 1, 100)])
+    rows = list_meal_items_for_audit(conn, "2026-06-24", "2026-06-24")
+    events = list_resolution_events(conn)
+
+    assert rows[0]["meal_type"] == "lunch"
+    assert rows[0]["food_alias"] == "rice"
+    assert events[0]["source"] == "meal-log"
+    assert events[0]["meal_log_id"] is not None
+    assert events[0]["meal_item_id"] == rows[0]["meal_item_id"]
 
 
 def test_report_tracks_partial_nutrient_coverage(tmp_path):
@@ -127,3 +164,29 @@ def test_profile_targets_use_age_sex_and_body_size():
     assert targets["323"].target == 15
     assert targets["421"].target == 425
     assert targets["606"].target is not None
+
+
+def test_alias_history_and_food_sources(tmp_path):
+    conn = connect(tmp_path / "nutrition.db")
+    init_db(conn)
+
+    upsert_alias(conn, "test food", 1, default_quantity_g=100, reason="first mapping")
+    upsert_alias(conn, "test food", 2, default_quantity_g=120, reason="corrected mapping")
+    add_food_source(
+        conn,
+        fdc_id=2,
+        source_type="local-label",
+        source_ref="/tmp/label.jpg",
+        label_text="serving_g=100; calcium_mg=200",
+        raw_payload={"fdcId": 2},
+    )
+
+    history = list_alias_history(conn, alias="test food")
+    sources = list_food_sources(conn, fdc_id=2)
+
+    assert len(history) == 2
+    assert history[0]["old_fdc_id"] == 1
+    assert history[0]["new_fdc_id"] == 2
+    assert history[0]["reason"] == "corrected mapping"
+    assert sources[0]["source_ref"] == "/tmp/label.jpg"
+    assert "calcium_mg" in sources[0]["label_text"]

@@ -12,6 +12,7 @@ from rich.table import Table
 
 from .config import default_db_path, fdc_api_key
 from .database import (
+    add_food_source,
     commit_meal,
     connect,
     cached_food,
@@ -21,7 +22,12 @@ from .database import (
     get_alias,
     get_user_profile,
     init_db,
+    list_alias_history,
     list_aliases,
+    list_food_sources,
+    list_meal_items_for_audit,
+    list_resolution_events,
+    log_resolution_event,
     upsert_user_profile,
     upsert_alias,
     upsert_food_detail,
@@ -38,9 +44,11 @@ app = typer.Typer(help="Local-first nutrition logger.")
 alias_app = typer.Typer(help="Manage personal food aliases.")
 label_app = typer.Typer(help="Manage local label-based foods.")
 profile_app = typer.Typer(help="Manage the local user profile used for target estimates.")
+audit_app = typer.Typer(help="Inspect local audit trail and mappings.")
 app.add_typer(alias_app, name="alias")
 app.add_typer(label_app, name="label")
 app.add_typer(profile_app, name="profile")
+app.add_typer(audit_app, name="audit")
 console = Console()
 
 
@@ -218,7 +226,17 @@ def save_meal(conn, meal: ParsedMeal, log_date: date, resolve: bool, yes: bool) 
         if fdc_id is not None:
             ensure_cached_quietly(conn, client, fdc_id)
             if alias_row is None:
-                upsert_alias(conn, alias, fdc_id, notes=food_description(conn, fdc_id))
+                reason = "explicit fdc_id in parsed item" if item.fdc_id else "resolved during meal log"
+                upsert_alias(conn, alias, fdc_id, notes=food_description(conn, fdc_id), reason=reason)
+                if item.fdc_id:
+                    log_resolution_event(
+                        conn,
+                        alias=alias,
+                        source="explicit-fdc",
+                        chosen_fdc_id=fdc_id,
+                        chosen_description=food_description(conn, fdc_id),
+                        reason=reason,
+                    )
 
         grams, note = estimate_item_grams(conn, item, alias_row, fdc_id)
         if note:
@@ -326,6 +344,15 @@ def alias_add(
         default_unit=default_unit,
         default_quantity_g=default_quantity_g,
         notes=notes,
+        reason="manual alias add",
+    )
+    log_resolution_event(
+        conn,
+        alias=alias,
+        source="manual-alias",
+        chosen_fdc_id=fdc_id,
+        chosen_description=food_description(conn, fdc_id),
+        reason=notes or "manual alias add",
     )
     console.print(f"Alias [bold]{alias}[/] -> {fdc_id} ({food_description(conn, fdc_id)})")
 
@@ -377,6 +404,8 @@ def label_add(
     fiber: float | None = typer.Option(None, help="Fiber grams per serving."),
     sodium: float | None = typer.Option(None, help="Sodium milligrams per serving."),
     default_quantity_g: float | None = typer.Option(None, help="Default grams when logged without quantity."),
+    source_ref: str | None = typer.Option(None, help="Optional label evidence reference, such as a photo path or URL."),
+    label_text: str | None = typer.Option(None, help="Optional raw label text or notes."),
     alias: list[str] = typer.Option([], "--alias", "-a", help="Alias to create. Can be repeated."),
     db: Path = typer.Option(default_factory=db_option, help="SQLite database path."),
 ) -> None:
@@ -396,6 +425,23 @@ def label_add(
         default_quantity_g=default_quantity_g,
     )
     upsert_food_detail(conn, payload)
+    add_food_source(
+        conn,
+        fdc_id=fdc_id,
+        source_type="local-label",
+        source_ref=source_ref,
+        label_text=label_text or label_text_from_args(
+            serving_g=serving_g,
+            calories=calories,
+            protein=protein,
+            fat=fat,
+            carbs=carbs,
+            fiber=fiber,
+            sodium=sodium,
+            default_quantity_g=default_quantity_g,
+        ),
+        raw_payload=payload,
+    )
     aliases = [name, *alias]
     for alias_name in aliases:
         upsert_alias(
@@ -404,8 +450,136 @@ def label_add(
             fdc_id,
             default_quantity_g=default_quantity_g,
             notes=f"Local label: {name}",
+            reason="local label add",
+        )
+        log_resolution_event(
+            conn,
+            alias=alias_name,
+            source="local-label",
+            chosen_fdc_id=fdc_id,
+            chosen_description=name,
+            reason=f"Local label: {name}",
         )
     console.print(f"Added local label food [bold]{name}[/] as {fdc_id}.")
+
+
+@audit_app.command("log")
+def audit_log(
+    day: str | None = typer.Option(None, "--date", help="Audit date, YYYY-MM-DD. Defaults to today."),
+    ending: str | None = typer.Option(None, "--ending", help="Week ending date for a seven-day audit."),
+    db: Path = typer.Option(default_factory=db_option, help="SQLite database path."),
+) -> None:
+    """Show logged items with chosen food references."""
+    conn = open_db(db)
+    if ending is not None:
+        start, end = week_window(parse_date(ending))
+    else:
+        start = end = parse_date(day)
+    rows = list_meal_items_for_audit(conn, start.isoformat(), end.isoformat())
+    table = Table(show_header=True, header_style="bold")
+    table.add_column("Date")
+    table.add_column("Meal")
+    table.add_column("Alias")
+    table.add_column("Qty", justify="right")
+    table.add_column("FDC/local", justify="right")
+    table.add_column("Source")
+    table.add_column("Description")
+    for row in rows:
+        qty = "" if row["quantity_g"] is None else f"{row['quantity_g']:g}g"
+        table.add_row(
+            row["date"],
+            row["meal_type"] or "",
+            row["food_alias"],
+            qty,
+            "" if row["fdc_id"] is None else str(row["fdc_id"]),
+            row["data_type"] or "",
+            row["description"] or "",
+        )
+    console.print(table)
+
+
+@audit_app.command("resolutions")
+def audit_resolutions(
+    limit: int = typer.Option(20, min=1, max=200),
+    db: Path = typer.Option(default_factory=db_option, help="SQLite database path."),
+) -> None:
+    """Show food-resolution events and candidate evidence."""
+    conn = open_db(db)
+    rows = list_resolution_events(conn, limit=limit)
+    table = Table(show_header=True, header_style="bold")
+    table.add_column("When")
+    table.add_column("Alias")
+    table.add_column("Source")
+    table.add_column("Chosen")
+    table.add_column("Candidates", justify="right")
+    table.add_column("Reason")
+    for row in rows:
+        candidate_count = count_json_list(row["candidates_json"])
+        table.add_row(
+            row["created_at"],
+            row["alias"],
+            row["source"],
+            format_chosen(row["chosen_fdc_id"], row["chosen_description"]),
+            "" if candidate_count is None else str(candidate_count),
+            row["reason"] or "",
+        )
+    console.print(table)
+
+
+@audit_app.command("alias-history")
+def audit_alias_history(
+    alias: str | None = typer.Option(None, help="Filter to one alias."),
+    limit: int = typer.Option(50, min=1, max=200),
+    db: Path = typer.Option(default_factory=db_option, help="SQLite database path."),
+) -> None:
+    """Show alias mapping changes."""
+    conn = open_db(db)
+    rows = list_alias_history(conn, alias=alias, limit=limit)
+    table = Table(show_header=True, header_style="bold")
+    table.add_column("When")
+    table.add_column("Alias")
+    table.add_column("Old")
+    table.add_column("New")
+    table.add_column("Old g", justify="right")
+    table.add_column("New g", justify="right")
+    table.add_column("Reason")
+    for row in rows:
+        table.add_row(
+            row["created_at"],
+            row["alias"],
+            "" if row["old_fdc_id"] is None else str(row["old_fdc_id"]),
+            "" if row["new_fdc_id"] is None else str(row["new_fdc_id"]),
+            "" if row["old_default_quantity_g"] is None else f"{row['old_default_quantity_g']:g}",
+            "" if row["new_default_quantity_g"] is None else f"{row['new_default_quantity_g']:g}",
+            row["reason"] or "",
+        )
+    console.print(table)
+
+
+@audit_app.command("sources")
+def audit_sources(
+    fdc_id: int | None = typer.Option(None, help="Filter to one FDC/local food id."),
+    limit: int = typer.Option(50, min=1, max=200),
+    db: Path = typer.Option(default_factory=db_option, help="SQLite database path."),
+) -> None:
+    """Show local evidence/source records."""
+    conn = open_db(db)
+    rows = list_food_sources(conn, fdc_id=fdc_id, limit=limit)
+    table = Table(show_header=True, header_style="bold")
+    table.add_column("When")
+    table.add_column("FDC/local", justify="right")
+    table.add_column("Type")
+    table.add_column("Ref")
+    table.add_column("Label")
+    for row in rows:
+        table.add_row(
+            row["created_at"],
+            str(row["fdc_id"]),
+            row["source_type"],
+            row["source_ref"] or "",
+            truncate(row["label_text"] or "", 80),
+        )
+    console.print(table)
 
 
 def next_local_food_id(conn) -> int:
@@ -470,6 +644,35 @@ def label_food_payload(
         "foodNutrients": nutrients,
         "foodPortions": portions,
     }
+
+
+def label_text_from_args(
+    *,
+    serving_g: float,
+    calories: float | None,
+    protein: float | None,
+    fat: float | None,
+    carbs: float | None,
+    fiber: float | None,
+    sodium: float | None,
+    default_quantity_g: float | None,
+) -> str:
+    values = [
+        f"serving_g={serving_g:g}",
+        f"calories={format_optional_value(calories)}",
+        f"protein_g={format_optional_value(protein)}",
+        f"fat_g={format_optional_value(fat)}",
+        f"carbs_g={format_optional_value(carbs)}",
+        f"fiber_g={format_optional_value(fiber)}",
+        f"sodium_mg={format_optional_value(sodium)}",
+    ]
+    if default_quantity_g is not None:
+        values.append(f"default_quantity_g={default_quantity_g:g}")
+    return "; ".join(values)
+
+
+def format_optional_value(value: float | None) -> str:
+    return "" if value is None else f"{value:g}"
 
 
 @profile_app.command("set")
@@ -637,7 +840,16 @@ def resolve_alias(conn, client: FdcClient, alias: str, yes: bool) -> int | None:
         return None
     if yes:
         chosen = candidates[0]
-        upsert_alias(conn, alias, chosen.fdc_id, notes=chosen.description)
+        upsert_alias(conn, alias, chosen.fdc_id, notes=chosen.description, reason="USDA first candidate via --yes")
+        log_resolution_event(
+            conn,
+            alias=alias,
+            source="usda-search",
+            chosen_fdc_id=chosen.fdc_id,
+            chosen_description=chosen.description,
+            candidates=candidate_dicts(candidates),
+            reason="USDA first candidate via --yes",
+        )
         return chosen.fdc_id
     if not sys.stdin.isatty():
         console.print(f"[yellow]Unresolved {alias}; rerun in a TTY or use --yes.[/]")
@@ -653,8 +865,45 @@ def resolve_alias(conn, client: FdcClient, alias: str, yes: bool) -> int | None:
     if index <= 0 or index > len(candidates):
         return None
     chosen = candidates[index - 1]
-    upsert_alias(conn, alias, chosen.fdc_id, notes=chosen.description)
+    upsert_alias(conn, alias, chosen.fdc_id, notes=chosen.description, reason="manual USDA candidate choice")
+    log_resolution_event(
+        conn,
+        alias=alias,
+        source="usda-search",
+        chosen_fdc_id=chosen.fdc_id,
+        chosen_description=chosen.description,
+        candidates=candidate_dicts(candidates),
+        reason=f"manual USDA candidate choice #{index}",
+    )
     return chosen.fdc_id
+
+
+def candidate_dicts(candidates) -> list[dict]:
+    return [candidate.model_dump(mode="json") for candidate in candidates]
+
+
+def count_json_list(value: str | None) -> int | None:
+    if not value:
+        return None
+    try:
+        parsed = json.loads(value)
+    except json.JSONDecodeError:
+        return None
+    return len(parsed) if isinstance(parsed, list) else None
+
+
+def format_chosen(fdc_id: int | None, description: str | None) -> str:
+    if fdc_id is None:
+        return description or ""
+    if description:
+        return f"{fdc_id}: {description}"
+    return str(fdc_id)
+
+
+def truncate(value: str, max_length: int) -> str:
+    if len(value) <= max_length:
+        return value
+    return value[: max_length - 1] + "…"
 
 
 def render_candidates(candidates, numbered: bool = False) -> None:

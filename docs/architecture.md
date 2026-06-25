@@ -13,7 +13,7 @@ CLI validates ParsedMeal JSON
 food resolver -> food_aliases + USDA candidates
         |
         v
-SQLite meal_logs + meal_items
+SQLite meal_logs + meal_items + audit tables
         |
         v
 cached food_nutrients + user_profiles + reports
@@ -79,12 +79,19 @@ USDA.
 ## Database
 
 - `food_aliases`: personal alias to FDC food
-- `meal_logs`: raw text + parsed JSON
-- `meal_items`: structured items from each log
+- `meal_logs`: raw text + parsed JSON + optional top-level meal type
+- `meal_items`: structured items from each log, including item-level meal type and chosen FDC/local id
 - `foods`: cached FDC food metadata
 - `food_nutrients`: cached nutrient values per 100g
 - `food_portions`: cached household measures used to convert cups, pieces, etc. to grams
 - `user_profiles`: local profile used to estimate daily target ranges
+- `food_resolution_events`: records how an alias was resolved, including USDA candidates when available
+- `alias_history`: records alias mapping/default-quantity changes
+- `food_sources`: records local source/evidence rows, such as label photo paths or URLs
+
+Audit tables are append-only for new decisions. Existing databases migrated from
+older versions can still audit logged items through `meal_items` and `foods`,
+but past resolution decisions are not reconstructed automatically.
 
 Personal runtime state belongs outside the repo, usually in
 `~/.nutrition/nutrition.db`.
