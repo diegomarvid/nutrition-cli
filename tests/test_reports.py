@@ -37,6 +37,52 @@ def test_report_aggregates_per_100g(tmp_path):
 
     assert report.totals["203"] == 40
     assert report.totals["208"] == 400
+    assert report.coverage["203"].known_items == 1
+    assert report.coverage["301"].known_items == 0
+
+
+def test_report_tracks_partial_nutrient_coverage(tmp_path):
+    conn = connect(tmp_path / "nutrition.db")
+    init_db(conn)
+    upsert_food_detail(
+        conn,
+        {
+            "fdcId": 1,
+            "description": "Food with calcium",
+            "foodNutrients": [
+                {"nutrient": {"number": "208", "id": 1008, "name": "Energy", "unitName": "kcal"}, "amount": 100},
+                {"nutrient": {"number": "301", "id": 1087, "name": "Calcium", "unitName": "mg"}, "amount": 50},
+            ],
+        },
+    )
+    upsert_food_detail(
+        conn,
+        {
+            "fdcId": 2,
+            "description": "Label-only food",
+            "foodNutrients": [
+                {"nutrient": {"number": "208", "id": 1008, "name": "Energy", "unitName": "kcal"}, "amount": 200},
+            ],
+        },
+    )
+    meal = ParsedMeal(
+        raw_text="mixed foods",
+        date=date(2026, 6, 24),
+        items=[
+            ParsedItem(food_alias="food with calcium", quantity_g=100),
+            ParsedItem(food_alias="label food", quantity_g=300),
+        ],
+    )
+    commit_meal(conn, meal, "2026-06-24", [(meal.items[0], 1, 100), (meal.items[1], 2, 300)])
+
+    report = load_report(conn, date(2026, 6, 24), date(2026, 6, 24))
+
+    assert report.totals["208"] == 700
+    assert report.totals["301"] == 50
+    assert report.coverage["208"].known_items == 2
+    assert report.coverage["208"].gram_percent == 1
+    assert report.coverage["301"].known_items == 1
+    assert report.coverage["301"].gram_percent == 0.25
 
 
 def test_profile_roundtrip(tmp_path):
@@ -77,3 +123,7 @@ def test_profile_targets_use_age_sex_and_body_size():
     assert targets["291"].target == 25
     assert targets["303"].target == 18
     assert targets["304"].target == 320
+    assert targets["328"].target == 15
+    assert targets["323"].target == 15
+    assert targets["421"].target == 425
+    assert targets["606"].target is not None

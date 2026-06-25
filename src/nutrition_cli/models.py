@@ -112,7 +112,10 @@ class NutrientTarget(BaseModel):
     number: str
     label: str
     unit: str
-    target: float
+    target: float | None = None
+    category: str = "other"
+    nutrient_id: int | None = None
+    note: str | None = None
 
 
 class UserProfile(BaseModel):

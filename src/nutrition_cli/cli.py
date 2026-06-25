@@ -28,7 +28,7 @@ from .database import (
 )
 from .fdc_client import FdcClient, FdcError, FdcRateLimitError, RateLimitInfo, ensure_food_cached
 from .parser import parse_meal
-from .reports import load_report, render_report, week_window
+from .reports import DISPLAY_ORDER, build_targets, load_report, render_report, target_context, week_window
 from .seed_data import seed_common_foods, seed_food
 from .units import estimate_grams, normalize_unit
 from .models import ParsedMeal, UserProfile
@@ -281,6 +281,30 @@ def week(
     end = parse_date(ending)
     start, end = week_window(end)
     render_report(load_report(conn, start, end), console, brutal=brutal)
+
+
+@app.command()
+def targets(
+    day: str | None = typer.Option(None, "--date", help="Target date, YYYY-MM-DD. Defaults to today."),
+    db: Path = typer.Option(default_factory=db_option, help="SQLite database path."),
+) -> None:
+    """Show the current profile-based nutrient target panel."""
+    conn = open_db(db)
+    profile = get_user_profile(conn)
+    target_date = parse_date(day)
+    target_map = build_targets(profile, target_date)
+    console.print(target_context(profile, target_date))
+
+    table = Table(show_header=True, header_style="bold")
+    table.add_column("Category")
+    table.add_column("Nutrient")
+    table.add_column("Target", justify="right")
+    table.add_column("Note")
+    for number in DISPLAY_ORDER:
+        target = target_map[number]
+        target_value = "no target" if target.target is None else f"{target.target:g} {target.unit}"
+        table.add_row(target.category, target.label, target_value, target.note or "")
+    console.print(table)
 
 
 @alias_app.command("add")

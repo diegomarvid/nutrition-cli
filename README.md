@@ -181,11 +181,36 @@ The "low / ok / high" labels are intentionally simple:
 - Less than 75% of the daily target is `low`.
 - 75% to 110% is `ok`.
 - More than 110% is `high`.
-- Calories, fat, and sodium are treated as upper-limit-style values, so `high`
-  is shown as something to watch rather than a win.
+- Sodium, saturated fat, and trans fat are treated as limit-style values. Calories
+  and total fat are target-style values, but `high` is still shown as something
+  to watch rather than a win.
 
 These targets are useful for habit feedback and gap spotting. They are not a
 medical diagnosis, and individual needs can differ from reference values.
+
+The report also shows a `Data` column. This is coverage: how much of the logged
+food quantity had a known value for that nutrient. For example, `100%` means
+every resolved item had data for that nutrient. `25% (1/2)` means only 25% of
+the logged grams, across 1 of 2 resolved items, had that nutrient available. A
+status with `?`, such as `low?`, should be read as "possibly low, but the source
+data is incomplete", not as a definitive deficiency.
+
+Current strategy for missing nutrient data:
+
+- Prefer generic USDA Foundation, SR Legacy, or FNDDS foods when micronutrient
+  completeness matters.
+- Use USDA Branded Foods and package labels for packaged products, but expect
+  them to be label-like and often incomplete for micronutrients.
+- Use `nutrition label add` for local products when the package label is the
+  best source.
+- Consider barcode/product sources such as
+  [Open Food Facts](https://openfoodfacts.github.io/openfoodfacts-server/api/)
+  as a future fallback for packaged foods, especially outside the U.S. These
+  databases can be useful, but they are also community/product-label driven, so
+  the CLI should still mark coverage instead of pretending every nutrient is
+  known.
+- Do not silently impute missing micronutrients from the LLM. If an estimate is
+  ever added, it should be explicitly marked as estimated.
 
 ## Usage
 
@@ -195,6 +220,7 @@ uv run nutrition log-json '{"raw_text":"comí 500g de muslo de pollo cocido con 
 uv run nutrition log "comí 500g de muslo de pollo cocido con piel, 1 taza de arroz blanco cocido y una manzana"
 uv run nutrition day
 uv run nutrition week
+uv run nutrition targets
 uv run nutrition profile show
 uv run nutrition alias list
 ```

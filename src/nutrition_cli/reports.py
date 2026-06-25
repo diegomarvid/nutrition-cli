@@ -11,45 +11,104 @@ from .database import get_user_profile
 from .models import NutrientTarget, UserProfile
 
 
+def nutrient(
+    number: str,
+    label: str,
+    unit: str,
+    target: float | None,
+    category: str,
+    nutrient_id: int | None = None,
+    note: str | None = None,
+) -> NutrientTarget:
+    return NutrientTarget(
+        number=number,
+        label=label,
+        unit=unit,
+        target=target,
+        category=category,
+        nutrient_id=nutrient_id,
+        note=note,
+    )
+
+
 BASE_TARGETS = {
-    "208": NutrientTarget(number="208", label="Calories", unit="kcal", target=2500),
-    "203": NutrientTarget(number="203", label="Protein", unit="g", target=120),
-    "204": NutrientTarget(number="204", label="Fat", unit="g", target=80),
-    "205": NutrientTarget(number="205", label="Carbs", unit="g", target=300),
-    "291": NutrientTarget(number="291", label="Fiber", unit="g", target=28),
-    "301": NutrientTarget(number="301", label="Calcium", unit="mg", target=1300),
-    "307": NutrientTarget(number="307", label="Sodium", unit="mg", target=2300),
-    "303": NutrientTarget(number="303", label="Iron", unit="mg", target=8),
-    "304": NutrientTarget(number="304", label="Magnesium", unit="mg", target=420),
-    "306": NutrientTarget(number="306", label="Potassium", unit="mg", target=4700),
-    "309": NutrientTarget(number="309", label="Zinc", unit="mg", target=11),
-    "320": NutrientTarget(number="320", label="Vitamin A", unit="ug", target=900),
-    "401": NutrientTarget(number="401", label="Vitamin C", unit="mg", target=90),
-    "417": NutrientTarget(number="417", label="Folate", unit="ug", target=400),
-    "418": NutrientTarget(number="418", label="B12", unit="ug", target=2.4),
-    "430": NutrientTarget(number="430", label="Vitamin K", unit="ug", target=120),
+    "208": nutrient("208", "Calories", "kcal", 2500, "energy", nutrient_id=1008),
+    "203": nutrient("203", "Protein", "g", 50, "macros", nutrient_id=1003),
+    "204": nutrient("204", "Fat", "g", 80, "macros", nutrient_id=1004),
+    "606": nutrient("606", "Saturated fat", "g", 20, "macros", note="limit-style target"),
+    "605": nutrient("605", "Trans fat", "g", 0, "macros", note="as low as possible"),
+    "601": nutrient("601", "Cholesterol", "mg", None, "macros"),
+    "205": nutrient("205", "Carbs", "g", 300, "macros", nutrient_id=1005),
+    "269": nutrient("269", "Total sugars", "g", None, "macros"),
+    "291": nutrient("291", "Fiber", "g", 28, "macros", nutrient_id=1079),
+    "618": nutrient("618", "Linoleic acid", "g", 17, "fatty acids", note="omega-6 AI"),
+    "619": nutrient("619", "Alpha-linolenic acid", "g", 1.6, "fatty acids", note="omega-3 AI"),
+    "301": nutrient("301", "Calcium", "mg", 1000, "minerals", nutrient_id=1087),
+    "305": nutrient("305", "Phosphorus", "mg", 700, "minerals", nutrient_id=1091),
+    "303": nutrient("303", "Iron", "mg", 8, "minerals", nutrient_id=1089),
+    "304": nutrient("304", "Magnesium", "mg", 420, "minerals", nutrient_id=1090),
+    "306": nutrient("306", "Potassium", "mg", 3400, "minerals", nutrient_id=1092),
+    "307": nutrient("307", "Sodium", "mg", 2300, "minerals", nutrient_id=1093, note="limit-style target"),
+    "309": nutrient("309", "Zinc", "mg", 11, "minerals", nutrient_id=1095),
+    "312": nutrient("312", "Copper", "mg", 0.9, "minerals", nutrient_id=1098),
+    "315": nutrient("315", "Manganese", "mg", 2.3, "minerals", nutrient_id=1101),
+    "317": nutrient("317", "Selenium", "ug", 55, "minerals", nutrient_id=1103),
+    "320": nutrient("320", "Vitamin A", "ug", 900, "vitamins", nutrient_id=1106),
+    "401": nutrient("401", "Vitamin C", "mg", 90, "vitamins", nutrient_id=1162),
+    "328": nutrient("328", "Vitamin D", "ug", 15, "vitamins", nutrient_id=1110),
+    "323": nutrient("323", "Vitamin E", "mg", 15, "vitamins", nutrient_id=1109),
+    "430": nutrient("430", "Vitamin K", "ug", 120, "vitamins", nutrient_id=1185),
+    "404": nutrient("404", "Thiamin (B1)", "mg", 1.2, "vitamins", nutrient_id=1165),
+    "405": nutrient("405", "Riboflavin (B2)", "mg", 1.3, "vitamins", nutrient_id=1166),
+    "406": nutrient("406", "Niacin (B3)", "mg", 16, "vitamins", nutrient_id=1167),
+    "415": nutrient("415", "Vitamin B6", "mg", 1.3, "vitamins", nutrient_id=1175),
+    "417": nutrient("417", "Folate", "ug", 400, "vitamins", nutrient_id=1177),
+    "418": nutrient("418", "B12", "ug", 2.4, "vitamins", nutrient_id=1178),
+    "410": nutrient("410", "Pantothenic acid", "mg", 5, "vitamins", nutrient_id=1170),
+    "421": nutrient("421", "Choline", "mg", 550, "vitamins", nutrient_id=1180),
 }
 
 DISPLAY_ORDER = [
     "208",
     "203",
     "204",
+    "606",
+    "605",
+    "601",
     "205",
+    "269",
     "291",
+    "618",
+    "619",
     "301",
-    "307",
+    "305",
     "303",
     "304",
     "306",
+    "307",
     "309",
+    "312",
+    "315",
+    "317",
     "320",
     "401",
+    "328",
+    "323",
+    "430",
+    "404",
+    "405",
+    "406",
+    "415",
     "417",
     "418",
-    "430",
+    "410",
+    "421",
 ]
 
-UPPER_LIMIT_NUMBERS = {"208", "204", "307"}
+UPPER_LIMIT_NUMBERS = {"606", "605", "307"}
+HIGH_WARNING_NUMBERS = {"208", "204", *UPPER_LIMIT_NUMBERS}
+NO_TARGET_STATUS = "[dim]tracked[/]"
+LOW_COVERAGE_THRESHOLD = 0.75
 ACTIVITY_FACTORS = {
     "sedentary": 1.2,
     "light": 1.375,
@@ -57,6 +116,26 @@ ACTIVITY_FACTORS = {
     "active": 1.725,
     "very-active": 1.9,
 }
+
+
+@dataclass
+class NutrientCoverage:
+    total_items: int
+    known_items: int = 0
+    total_grams: float = 0
+    known_grams: float = 0
+
+    @property
+    def item_percent(self) -> float | None:
+        if self.total_items == 0:
+            return None
+        return self.known_items / self.total_items
+
+    @property
+    def gram_percent(self) -> float | None:
+        if self.total_grams <= 0:
+            return self.item_percent
+        return self.known_grams / self.total_grams
 
 
 @dataclass
@@ -68,17 +147,26 @@ class Report:
     units: dict[str, str]
     item_count: int
     unresolved_items: list[str]
+    coverage: dict[str, NutrientCoverage]
     profile: UserProfile | None = None
 
 
 def load_report(conn, start: date, end: date) -> Report:
+    target_by_number = {target.number: key for key, target in BASE_TARGETS.items()}
+    target_by_id = {
+        target.nutrient_id: key
+        for key, target in BASE_TARGETS.items()
+        if target.nutrient_id is not None
+    }
     rows = conn.execute(
         """
         SELECT
+          mi.id AS meal_item_id,
           mi.food_alias,
           mi.quantity_g,
           mi.fdc_id,
           fn.nutrient_number,
+          fn.nutrient_id,
           fn.amount_per_100g,
           fn.unit
         FROM meal_items mi
@@ -92,20 +180,41 @@ def load_report(conn, start: date, end: date) -> Report:
     totals: dict[str, float] = defaultdict(float)
     units: dict[str, str] = {}
     unresolved = set()
-    item_ids = 0
-    seen_items = set()
+    item_ids = set()
+    resolved_items: dict[int, float] = {}
+    known_items: dict[str, set[int]] = defaultdict(set)
+    known_grams_by_item: dict[str, dict[int, float]] = defaultdict(dict)
     for row in rows:
-        item_key = (row["food_alias"], row["fdc_id"], row["quantity_g"])
-        if item_key not in seen_items:
-            seen_items.add(item_key)
-            item_ids += 1
+        item_id = int(row["meal_item_id"])
+        item_ids.add(item_id)
         if row["fdc_id"] is None or row["quantity_g"] is None:
             unresolved.add(row["food_alias"])
             continue
+        quantity_g = float(row["quantity_g"])
+        resolved_items[item_id] = quantity_g
         if row["nutrient_number"] is None:
             continue
-        totals[row["nutrient_number"]] += (row["amount_per_100g"] or 0) * row["quantity_g"] / 100
-        units[row["nutrient_number"]] = row["unit"]
+        key = target_by_number.get(str(row["nutrient_number"]))
+        if key is None and row["nutrient_id"] is not None:
+            key = target_by_id.get(int(row["nutrient_id"]))
+        if key is None:
+            continue
+        totals[key] += (row["amount_per_100g"] or 0) * quantity_g / 100
+        units[key] = row["unit"]
+        known_items[key].add(item_id)
+        known_grams_by_item[key][item_id] = quantity_g
+
+    coverage = {}
+    total_grams = sum(resolved_items.values())
+    for key in BASE_TARGETS:
+        item_set = known_items.get(key, set())
+        grams_by_item = known_grams_by_item.get(key, {})
+        coverage[key] = NutrientCoverage(
+            total_items=len(resolved_items),
+            known_items=len(item_set),
+            total_grams=total_grams,
+            known_grams=sum(grams_by_item.values()),
+        )
 
     return Report(
         start_date=start,
@@ -113,8 +222,9 @@ def load_report(conn, start: date, end: date) -> Report:
         days=(end - start).days + 1,
         totals=dict(totals),
         units=units,
-        item_count=item_ids,
+        item_count=len(item_ids),
         unresolved_items=sorted(unresolved),
+        coverage=coverage,
         profile=get_user_profile(conn),
     )
 
@@ -138,40 +248,34 @@ def render_report(report: Report, console: Console, brutal: bool = True) -> None
     table.add_column("Amount", justify="right")
     table.add_column("Target", justify="right")
     table.add_column("Status")
+    table.add_column("Data", justify="right")
 
     low_labels = []
     high_labels = []
     over_labels = []
     for number in DISPLAY_ORDER:
         target = targets[number]
-        amount = report.totals.get(number, 0)
-        daily_amount = amount / report.days
-        percent = daily_amount / target.target if target.target else 0
-        if number in UPPER_LIMIT_NUMBERS:
-            if percent >= 1.1:
-                status = "[red]high[/]"
-                over_labels.append(target.label)
-            elif percent >= 0.75:
-                status = "[yellow]ok[/]"
-            else:
-                status = "[green]low[/]"
-        else:
-            if percent >= 1.1:
-                status = "[green]high[/]"
-                high_labels.append(target.label)
-            elif percent >= 0.75:
-                status = "[yellow]ok[/]"
-            else:
-                status = "[red]low[/]"
-                low_labels.append(target.label)
+        coverage = report.coverage.get(number, NutrientCoverage(total_items=0))
+        daily_amount = report.totals.get(number, 0) / report.days
+        status, plain_status = nutrient_status(number, target, daily_amount, coverage)
+        if plain_status == "high" and number in HIGH_WARNING_NUMBERS:
+            over_labels.append(target.label)
+        elif plain_status == "high":
+            high_labels.append(target.label)
+        elif plain_status == "low":
+            low_labels.append(target.label)
         table.add_row(
             target.label,
-            f"{daily_amount:,.1f} {target.unit}/day",
-            f"{target.target:g} {target.unit}",
+            format_amount(daily_amount, target, coverage),
+            format_target(target),
             status,
+            format_coverage(coverage),
         )
 
     console.print(table)
+
+    if has_partial_coverage(report):
+        console.print("[dim]? = source data is partial for that nutrient; check the Data column.[/]")
 
     if report.unresolved_items:
         console.print("[yellow]Unresolved items:[/] " + ", ".join(report.unresolved_items))
@@ -191,6 +295,70 @@ def render_report(report: Report, console: Console, brutal: bool = True) -> None
 
 def week_window(ending: date) -> tuple[date, date]:
     return ending - timedelta(days=6), ending
+
+
+def nutrient_status(
+    number: str,
+    target: NutrientTarget,
+    daily_amount: float,
+    coverage: NutrientCoverage,
+) -> tuple[str, str]:
+    coverage_percent = coverage.gram_percent
+    if coverage.known_items == 0:
+        return "[dim]unknown[/]", "unknown"
+
+    suffix = "?" if coverage_percent is not None and coverage_percent < LOW_COVERAGE_THRESHOLD else ""
+    if target.target is None:
+        return f"{NO_TARGET_STATUS}{suffix}", "tracked"
+
+    if number in UPPER_LIMIT_NUMBERS:
+        if target.target == 0:
+            plain = "ok" if daily_amount <= 0.1 else "high"
+        else:
+            percent = daily_amount / target.target
+            plain = "high" if percent >= 1.1 else "ok"
+        color = "red" if plain == "high" else "yellow"
+        return f"[{color}]{plain}[/]{suffix}", plain
+
+    percent = daily_amount / target.target if target.target else 0
+    if percent >= 1.1:
+        color = "red" if number in HIGH_WARNING_NUMBERS else "green"
+        return f"[{color}]high[/]{suffix}", "high"
+    if percent >= 0.75:
+        return f"[yellow]ok[/]{suffix}", "ok"
+    return f"[red]low[/]{suffix}", "low"
+
+
+def format_amount(daily_amount: float, target: NutrientTarget, coverage: NutrientCoverage) -> str:
+    if coverage.known_items == 0:
+        return "[dim]unknown[/]"
+    return f"{daily_amount:,.1f} {target.unit}"
+
+
+def format_target(target: NutrientTarget) -> str:
+    if target.target is None:
+        return "[dim]no target[/]"
+    if target.target == 0:
+        return f"0 {target.unit}"
+    return f"{target.target:g} {target.unit}"
+
+
+def format_coverage(coverage: NutrientCoverage) -> str:
+    percent = coverage.gram_percent
+    if percent is None:
+        return "[dim]n/a[/]"
+    label = f"{percent * 100:.0f}%"
+    if coverage.known_items == coverage.total_items:
+        return label
+    return f"{label} ({coverage.known_items}/{coverage.total_items})"
+
+
+def has_partial_coverage(report: Report) -> bool:
+    for coverage in report.coverage.values():
+        percent = coverage.gram_percent
+        if coverage.known_items > 0 and percent is not None and percent < LOW_COVERAGE_THRESHOLD:
+            return True
+    return False
 
 
 def build_targets(profile: UserProfile | None, day: date) -> dict[str, NutrientTarget]:
@@ -213,6 +381,7 @@ def build_targets(profile: UserProfile | None, day: date) -> dict[str, NutrientT
         if calories is not None:
             targets["208"].target = calories
             targets["204"].target = round(calories * 0.30 / 9)
+            targets["606"].target = round(calories * 0.10 / 9)
             targets["205"].target = round(calories * 0.50 / 4)
 
     if age is not None and sex in {"male", "female"}:
@@ -234,24 +403,52 @@ def apply_age_sex_targets(targets: dict[str, NutrientTarget], age: int, sex: str
     if sex == "male":
         targets["291"].target = 38 if age <= 50 else 30
         targets["301"].target = 1000 if age <= 70 else 1200
+        targets["305"].target = 700
         targets["303"].target = 8
         targets["304"].target = 400 if age <= 30 else 420
         targets["306"].target = 3400
         targets["309"].target = 11
+        targets["312"].target = 0.9
+        targets["315"].target = 2.3
+        targets["317"].target = 55
         targets["320"].target = 900
         targets["401"].target = 90
+        targets["328"].target = 15 if age <= 70 else 20
+        targets["323"].target = 15
         targets["430"].target = 120
+        targets["404"].target = 1.2
+        targets["405"].target = 1.3
+        targets["406"].target = 16
+        targets["415"].target = 1.3 if age <= 50 else 1.7
+        targets["410"].target = 5
+        targets["421"].target = 550
+        targets["618"].target = 17 if age <= 50 else 14
+        targets["619"].target = 1.6
         return
 
     targets["291"].target = 25 if age <= 50 else 21
     targets["301"].target = 1000 if age <= 50 else 1200
+    targets["305"].target = 700
     targets["303"].target = 18 if age <= 50 else 8
     targets["304"].target = 310 if age <= 30 else 320
     targets["306"].target = 2600
     targets["309"].target = 8
+    targets["312"].target = 0.9
+    targets["315"].target = 1.8
+    targets["317"].target = 55
     targets["320"].target = 700
     targets["401"].target = 75
+    targets["328"].target = 15 if age <= 70 else 20
+    targets["323"].target = 15
     targets["430"].target = 90
+    targets["404"].target = 1.1
+    targets["405"].target = 1.1
+    targets["406"].target = 14
+    targets["415"].target = 1.3 if age <= 50 else 1.5
+    targets["410"].target = 5
+    targets["421"].target = 425
+    targets["618"].target = 12 if age <= 50 else 11
+    targets["619"].target = 1.1
 
 
 def round_to_nearest(value: float, step: int) -> float:

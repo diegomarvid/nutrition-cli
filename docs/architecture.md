@@ -46,8 +46,23 @@ estimates.
   reporting anchors.
 
 The status labels are a display heuristic: less than 75% of target is `low`,
-75% to 110% is `ok`, and more than 110% is `high`. Calories, fat, and sodium
-are treated as upper-limit-style values where `high` is a warning.
+75% to 110% is `ok`, and more than 110% is `high`. Sodium, saturated fat, and
+trans fat are limit-style values. Calories and total fat are target-style values,
+but `high` is still shown as a warning.
+
+Every target nutrient also carries coverage. Coverage answers: "for how much of
+the logged food did the source data contain this nutrient?" A low value with
+partial coverage is not treated as equally certain as a low value with full
+coverage.
+
+Missing values are not imputed. The safe hierarchy is:
+
+1. Use complete USDA generic foods for nutrient-rich analysis.
+2. Use branded foods and labels for product identity and label nutrients.
+3. Add package-label foods locally when the user has the label.
+4. Add optional product/barcode sources, such as Open Food Facts, only as another
+   source with explicit coverage and provenance.
+5. Never let the assistant invent micronutrient values.
 
 ## API rate limits
 
