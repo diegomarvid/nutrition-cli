@@ -107,6 +107,37 @@ There is still a small deterministic Spanish/English parser for quick manual log
 comí 500g de muslo de pollo cocido con piel, 1 taza de arroz blanco cocido y una manzana
 ```
 
+## Assistant workflow
+
+When using this repo with an LLM assistant, the assistant should start by checking:
+
+```bash
+uv run nutrition doctor
+```
+
+If the profile is missing, ask the user for:
+
+- birth date
+- sex/gender target category used for nutrient estimates
+- height
+- weight
+- activity level
+
+Then save those values locally:
+
+```bash
+uv run nutrition profile set \
+  --birth-date YYYY-MM-DD \
+  --sex male \
+  --height-cm 180 \
+  --weight-kg 78 \
+  --activity light \
+  --no-interactive
+```
+
+The profile is required for better "high/low" feedback. It is still local
+runtime data and must not be committed.
+
 ## Usage
 
 ```bash
