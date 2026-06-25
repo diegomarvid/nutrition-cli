@@ -151,7 +151,8 @@ Food nutrient values come from:
 
 The LLM assistant can help structure what the user ate, but it should not invent
 numeric nutrient values. Reports multiply cached nutrient values per 100 g by
-the logged quantity in grams; heuristic comments are displayed separately.
+the logged quantity in grams; interpretation of missing data belongs in the
+assistant's answer, clearly labeled as judgment or inference.
 
 Daily target values come from public nutrition reference guidance, not from
 FoodData Central. The code uses Dietary Reference Intake-style references from
@@ -216,9 +217,17 @@ Current strategy for missing nutrient data:
   the CLI should still mark coverage instead of pretending every nutrient is
   known.
 - Do not silently impute missing micronutrients into numeric totals. Numeric
-  report rows stay source-based. The report may add a separate heuristic note
-  when important data is missing, for example: no detailed omega-3 values were
-  available, but the logged foods do not look like obvious omega-3 sources.
+  report rows stay source-based.
+- If any nutrient is unknown or has partial coverage, the assistant must not stay
+  silent. It should say what is missing, decide whether the user's foods make
+  that nutrient likely low/high/uncertain, and label that as AI judgment or
+  research-based opinion rather than as a measured value.
+- The assistant should use broad nutrition knowledge and, when useful, look up
+  reputable sources for the food or nutrient. For example: if omega-3 data is
+  missing but the logged foods are chicken, rice, and processed meat, it can say
+  omega-3 is probably low and suggest fish, chia/flax, walnuts, or similar
+  sources. That conclusion should not be written back as a numeric nutrient
+  total unless source data is added.
 
 ## Usage
 

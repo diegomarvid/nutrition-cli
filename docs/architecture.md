@@ -22,8 +22,9 @@ cached food_nutrients + user_profiles + reports
 ## Data boundaries
 
 The assistant may infer structure and quantities from the user's message. It must
-not invent numeric nutrient values; food-pattern heuristics belong in a separate
-comment.
+not invent numeric nutrient values. When nutrient data is missing or partial, the
+assistant should still take a clearly labeled position using nutrition knowledge
+or research; that judgment belongs in prose, not in numeric totals.
 
 Nutrient amounts come from cached FoodData Central detail responses or from local rows manually inserted by the user.
 Packaged-product labels should be added to the local SQLite database with
@@ -67,10 +68,10 @@ Missing values are not imputed into numeric totals. The safe hierarchy is:
 3. Add package-label foods locally when the user has the label.
 4. Add optional product/barcode sources, such as Open Food Facts, only as another
    source with explicit coverage and provenance.
-5. Add a clearly separated heuristic note when useful, especially for healthy
-   fats and omega-3, so missing source data does not make the report silent.
-   The note can use food-pattern judgment, but the numeric rows remain
-   source-based.
+5. Require the assistant to address every important unknown/partial nutrient in
+   prose. It should use its own nutrition judgment and look up reputable sources
+   when useful, but it must label this as inference or research-based opinion and
+   keep numeric rows source-based.
 
 ## API rate limits
 

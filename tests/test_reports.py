@@ -16,7 +16,7 @@ from nutrition_cli.database import (
 )
 from nutrition_cli.cli import label_food_payload
 from nutrition_cli.models import ParsedItem, ParsedMeal, UserProfile
-from nutrition_cli.reports import build_targets, healthy_fat_notes, load_report
+from nutrition_cli.reports import build_targets, has_missing_or_partial_coverage, load_report
 
 
 def test_report_aggregates_per_100g(tmp_path):
@@ -121,6 +121,7 @@ def test_report_tracks_partial_nutrient_coverage(tmp_path):
     assert report.coverage["208"].gram_percent == 1
     assert report.coverage["301"].known_items == 1
     assert report.coverage["301"].gram_percent == 0.25
+    assert has_missing_or_partial_coverage(report)
 
 
 def test_report_tracks_detailed_fatty_acids_without_double_counting_ala(tmp_path):
@@ -181,79 +182,6 @@ def test_report_tracks_detailed_fatty_acids_without_double_counting_ala(tmp_path
     assert round(report.totals["646"], 2) == 2.37
     assert round(report.totals["EPA_DHA"], 2) == 1.9
     assert report.coverage["EPA_DHA"].known_items == 1
-
-
-def test_healthy_fat_notes_fallback_when_detailed_data_is_missing(tmp_path):
-    conn = connect(tmp_path / "nutrition.db")
-    init_db(conn)
-    upsert_food_detail(
-        conn,
-        {
-            "fdcId": 1,
-            "description": "Chicken, cooked",
-            "foodNutrients": [
-                {"nutrient": {"number": "204", "id": 1004, "name": "Total lipid (fat)", "unitName": "g"}, "amount": 10},
-            ],
-        },
-    )
-    meal = ParsedMeal(
-        raw_text="chicken and rice",
-        date=date(2026, 6, 24),
-        items=[ParsedItem(food_alias="chicken", quantity_g=200)],
-    )
-    commit_meal(conn, meal, "2026-06-24", [(meal.items[0], 1, 200)])
-    report = load_report(conn, date(2026, 6, 24), date(2026, 6, 24))
-
-    notes = healthy_fat_notes(report, build_targets(None, date(2026, 6, 24)))
-
-    assert any("No vino data detallada" in note for note in notes)
-    assert any("no detecte una fuente obvia de omega-3" in note for note in notes)
-
-
-def test_healthy_fat_notes_do_not_override_numeric_omega_data(tmp_path):
-    conn = connect(tmp_path / "nutrition.db")
-    init_db(conn)
-    upsert_food_detail(
-        conn,
-        {
-            "fdcId": 1,
-            "description": "Generic capsule",
-            "foodNutrients": [
-                {"nutrient": {"number": "629", "id": 1278, "name": "PUFA 20:5 n-3 (EPA)", "unitName": "g"}, "amount": 2},
-                {"nutrient": {"number": "621", "id": 1272, "name": "PUFA 22:6 n-3 (DHA)", "unitName": "g"}, "amount": 3},
-                {
-                    "nutrient": {
-                        "number": "645",
-                        "id": 1292,
-                        "name": "Fatty acids, total monounsaturated",
-                        "unitName": "g",
-                    },
-                    "amount": 30,
-                },
-                {
-                    "nutrient": {
-                        "number": "646",
-                        "id": 1293,
-                        "name": "Fatty acids, total polyunsaturated",
-                        "unitName": "g",
-                    },
-                    "amount": 60,
-                },
-            ],
-        },
-    )
-    meal = ParsedMeal(
-        raw_text="generic capsule",
-        date=date(2026, 6, 24),
-        items=[ParsedItem(food_alias="generic capsule", quantity_g=10)],
-    )
-    commit_meal(conn, meal, "2026-06-24", [(meal.items[0], 1, 10)])
-    report = load_report(conn, date(2026, 6, 24), date(2026, 6, 24))
-
-    notes = healthy_fat_notes(report, build_targets(None, date(2026, 6, 24)))
-
-    assert not any("no detecte una fuente obvia de omega-3" in note for note in notes)
-    assert not any("tampoco detecte un ancla clara" in note for note in notes)
 
 
 def test_local_label_payload_accepts_detailed_fats():
