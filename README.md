@@ -34,8 +34,17 @@ uv run nutrition init
 
 This creates `~/.nutrition/nutrition.db` by default and initializes all tables:
 `food_aliases`, `meal_logs`, `meal_items`, `foods`, `food_nutrients`, and
-`food_portions`. Commands that open the database also run the schema/migration
-setup, but `nutrition init` is the explicit first step.
+`food_portions`, and `user_profiles`. If you run it in an interactive terminal,
+it can also prompt for a local profile used to estimate daily targets. Commands
+that open the database also run the schema/migration setup, but `nutrition init`
+is the explicit first step.
+
+You can set or update the profile later:
+
+```bash
+uv run nutrition profile set
+uv run nutrition profile show
+```
 
 Optionally seed a few generic starter foods and aliases:
 
@@ -106,6 +115,7 @@ uv run nutrition log-json '{"raw_text":"comí 500g de muslo de pollo cocido con 
 uv run nutrition log "comí 500g de muslo de pollo cocido con piel, 1 taza de arroz blanco cocido y una manzana"
 uv run nutrition day
 uv run nutrition week
+uv run nutrition profile show
 uv run nutrition alias list
 ```
 
@@ -117,8 +127,21 @@ uv run nutrition log --yes "comí 500g de muslo de pollo cocido, 1 taza de arroz
 
 ## Add personal data
 
-Personal aliases, default portions, cached foods, and meal history live in your
-local SQLite database, not in the repository.
+Personal profile fields, aliases, default portions, cached foods, and meal
+history live in your local SQLite database, not in the repository.
+
+The profile currently stores birth date, sex/gender target category, height,
+weight, and activity level. Reports use it to estimate calorie targets and to
+choose age/sex-based nutrient targets where applicable:
+
+```bash
+uv run nutrition profile set \
+  --birth-date 1990-01-31 \
+  --sex male \
+  --height-cm 180 \
+  --weight-kg 78 \
+  --activity light
+```
 
 Map an alias to a USDA/FDC food:
 
@@ -159,6 +182,7 @@ The repo is intended to be safe to make public. Do not commit personal runtime
 state:
 
 - `~/.nutrition/nutrition.db`: local meal history, aliases, cached foods
+- local profile fields stored inside that database
 - `~/.nutrition/fdc_api_key`: local FoodData Central API key
 - `.env`
 - any `*.db`, `*.sqlite`, or `*.sqlite3` file

@@ -6,6 +6,56 @@ from typing import Any
 from pydantic import BaseModel, Field, field_validator
 
 
+SEX_ALIASES = {
+    "m": "male",
+    "male": "male",
+    "man": "male",
+    "hombre": "male",
+    "masculino": "male",
+    "f": "female",
+    "female": "female",
+    "woman": "female",
+    "mujer": "female",
+    "femenino": "female",
+    "other": "other",
+    "otro": "other",
+    "otra": "other",
+    "nonbinary": "other",
+    "non-binary": "other",
+    "no binario": "other",
+    "no-binario": "other",
+}
+
+ACTIVITY_LEVELS = {
+    "sedentary",
+    "light",
+    "moderate",
+    "active",
+    "very-active",
+}
+
+ACTIVITY_ALIASES = {
+    "sedentario": "sedentary",
+    "sedentaria": "sedentary",
+    "sedentary": "sedentary",
+    "light": "light",
+    "liviano": "light",
+    "liviana": "light",
+    "ligero": "light",
+    "ligera": "light",
+    "moderate": "moderate",
+    "moderado": "moderate",
+    "moderada": "moderate",
+    "active": "active",
+    "activo": "active",
+    "activa": "active",
+    "very active": "very-active",
+    "very-active": "very-active",
+    "muy activo": "very-active",
+    "muy activa": "very-active",
+}
+
+
 class ParsedItem(BaseModel):
     food_alias: str = Field(description="User-facing food name, preferably in the user's language.")
     fdc_id: int | None = Field(default=None, description="Optional USDA FoodData Central id when already known.")
@@ -63,3 +113,54 @@ class NutrientTarget(BaseModel):
     label: str
     unit: str
     target: float
+
+
+class UserProfile(BaseModel):
+    birth_date: Date | None = None
+    sex: str | None = Field(default=None, description="male, female, or other; used only for nutrition target estimates")
+    height_cm: float | None = Field(default=None, gt=0)
+    weight_kg: float | None = Field(default=None, gt=0)
+    activity_level: str | None = Field(
+        default=None,
+        description="sedentary, light, moderate, active, or very-active",
+    )
+
+    @field_validator("birth_date")
+    @classmethod
+    def reject_future_birth_date(cls, value: Date | None) -> Date | None:
+        if value is not None and value > Date.today():
+            raise ValueError("birth_date cannot be in the future")
+        return value
+
+    @field_validator("sex")
+    @classmethod
+    def normalize_sex(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        normalized = " ".join(value.strip().lower().split())
+        if not normalized:
+            return None
+        if normalized not in SEX_ALIASES:
+            raise ValueError("sex must be male, female, or other")
+        return SEX_ALIASES[normalized]
+
+    @field_validator("activity_level")
+    @classmethod
+    def normalize_activity_level(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        normalized = " ".join(value.strip().lower().split())
+        if not normalized:
+            return None
+        normalized = ACTIVITY_ALIASES.get(normalized, normalized)
+        if normalized not in ACTIVITY_LEVELS:
+            raise ValueError("activity_level must be sedentary, light, moderate, active, or very-active")
+        return normalized
+
+    def age_on(self, day: Date) -> int | None:
+        if self.birth_date is None:
+            return None
+        years = day.year - self.birth_date.year
+        if (day.month, day.day) < (self.birth_date.month, self.birth_date.day):
+            years -= 1
+        return years

@@ -28,12 +28,13 @@ Fibra, magnesio, potasio, calcio, vitamina C/folato/K: bajos.
 - SQLite
 - USDA search/detail
 - Alias mapping
+- Local user profile for target estimates
 - Daily summary
 
 ### v1
 
 - Weekly report
-- Personal targets
+- Goal-specific targets beyond maintenance estimates
 - Suggestions for foods that fix the most repeated gaps
 - Audio input through Telegram/WhatsApp
 

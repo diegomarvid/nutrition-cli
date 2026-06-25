@@ -16,7 +16,7 @@ food resolver -> food_aliases + USDA candidates
 SQLite meal_logs + meal_items
         |
         v
-cached food_nutrients + reports
+cached food_nutrients + user_profiles + reports
 ```
 
 ## Data boundaries
@@ -27,6 +27,10 @@ Nutrient amounts come from cached FoodData Central detail responses or from loca
 Packaged-product labels should be added to the local SQLite database with
 `nutrition label add`; user-specific products should not be committed to the
 repository seed data.
+
+Profile fields such as birth date, sex/gender target category, height, weight,
+and activity level are also local runtime data. They belong in `user_profiles`
+inside the user's SQLite database, not in source code or public seed data.
 
 ## API rate limits
 
@@ -48,6 +52,7 @@ USDA.
 - `foods`: cached FDC food metadata
 - `food_nutrients`: cached nutrient values per 100g
 - `food_portions`: cached household measures used to convert cups, pieces, etc. to grams
+- `user_profiles`: local profile used to estimate daily target ranges
 
 Personal runtime state belongs outside the repo, usually in
 `~/.nutrition/nutrition.db`.

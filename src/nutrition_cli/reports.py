@@ -7,10 +7,11 @@ from datetime import date, timedelta
 from rich.console import Console
 from rich.table import Table
 
-from .models import NutrientTarget
+from .database import get_user_profile
+from .models import NutrientTarget, UserProfile
 
 
-TARGETS = {
+BASE_TARGETS = {
     "208": NutrientTarget(number="208", label="Calories", unit="kcal", target=2500),
     "203": NutrientTarget(number="203", label="Protein", unit="g", target=120),
     "204": NutrientTarget(number="204", label="Fat", unit="g", target=80),
@@ -49,6 +50,13 @@ DISPLAY_ORDER = [
 ]
 
 UPPER_LIMIT_NUMBERS = {"208", "204", "307"}
+ACTIVITY_FACTORS = {
+    "sedentary": 1.2,
+    "light": 1.375,
+    "moderate": 1.55,
+    "active": 1.725,
+    "very-active": 1.9,
+}
 
 
 @dataclass
@@ -60,6 +68,7 @@ class Report:
     units: dict[str, str]
     item_count: int
     unresolved_items: list[str]
+    profile: UserProfile | None = None
 
 
 def load_report(conn, start: date, end: date) -> Report:
@@ -106,6 +115,7 @@ def load_report(conn, start: date, end: date) -> Report:
         units=units,
         item_count=item_ids,
         unresolved_items=sorted(unresolved),
+        profile=get_user_profile(conn),
     )
 
 
@@ -120,6 +130,9 @@ def render_report(report: Report, console: Console, brutal: bool = True) -> None
         console.print("No logged items for this period.")
         return
 
+    targets = build_targets(report.profile, report.end_date)
+    console.print(target_context(report.profile, report.end_date))
+
     table = Table(show_header=True, header_style="bold")
     table.add_column("Nutrient")
     table.add_column("Amount", justify="right")
@@ -130,7 +143,7 @@ def render_report(report: Report, console: Console, brutal: bool = True) -> None
     high_labels = []
     over_labels = []
     for number in DISPLAY_ORDER:
-        target = TARGETS[number]
+        target = targets[number]
         amount = report.totals.get(number, 0)
         daily_amount = amount / report.days
         percent = daily_amount / target.target if target.target else 0
@@ -178,3 +191,88 @@ def render_report(report: Report, console: Console, brutal: bool = True) -> None
 
 def week_window(ending: date) -> tuple[date, date]:
     return ending - timedelta(days=6), ending
+
+
+def build_targets(profile: UserProfile | None, day: date) -> dict[str, NutrientTarget]:
+    targets = {number: target.model_copy() for number, target in BASE_TARGETS.items()}
+    if profile is None:
+        return targets
+
+    age = profile.age_on(day)
+    sex = profile.sex
+    if profile.weight_kg is not None:
+        targets["203"].target = round(max(0.8 * profile.weight_kg, 1), 1)
+
+    if (
+        age is not None
+        and sex in {"male", "female"}
+        and profile.height_cm is not None
+        and profile.weight_kg is not None
+    ):
+        calories = estimated_daily_calories(profile, age)
+        if calories is not None:
+            targets["208"].target = calories
+            targets["204"].target = round(calories * 0.30 / 9)
+            targets["205"].target = round(calories * 0.50 / 4)
+
+    if age is not None and sex in {"male", "female"}:
+        apply_age_sex_targets(targets, age, sex)
+
+    return targets
+
+
+def estimated_daily_calories(profile: UserProfile, age: int) -> float | None:
+    if profile.sex not in {"male", "female"} or profile.height_cm is None or profile.weight_kg is None:
+        return None
+    sex_adjustment = 5 if profile.sex == "male" else -161
+    bmr = (10 * profile.weight_kg) + (6.25 * profile.height_cm) - (5 * age) + sex_adjustment
+    activity_factor = ACTIVITY_FACTORS.get(profile.activity_level or "light", ACTIVITY_FACTORS["light"])
+    return round_to_nearest(bmr * activity_factor, 25)
+
+
+def apply_age_sex_targets(targets: dict[str, NutrientTarget], age: int, sex: str) -> None:
+    if sex == "male":
+        targets["291"].target = 38 if age <= 50 else 30
+        targets["301"].target = 1000 if age <= 70 else 1200
+        targets["303"].target = 8
+        targets["304"].target = 400 if age <= 30 else 420
+        targets["306"].target = 3400
+        targets["309"].target = 11
+        targets["320"].target = 900
+        targets["401"].target = 90
+        targets["430"].target = 120
+        return
+
+    targets["291"].target = 25 if age <= 50 else 21
+    targets["301"].target = 1000 if age <= 50 else 1200
+    targets["303"].target = 18 if age <= 50 else 8
+    targets["304"].target = 310 if age <= 30 else 320
+    targets["306"].target = 2600
+    targets["309"].target = 8
+    targets["320"].target = 700
+    targets["401"].target = 75
+    targets["430"].target = 90
+
+
+def round_to_nearest(value: float, step: int) -> float:
+    return round(value / step) * step
+
+
+def target_context(profile: UserProfile | None, day: date) -> str:
+    if profile is None:
+        return "[dim]Targets: generic adult defaults. Run `nutrition profile set` for profile-based estimates.[/]"
+
+    age = profile.age_on(day)
+    parts = []
+    if age is not None:
+        parts.append(f"age {age}")
+    if profile.sex:
+        parts.append(profile.sex)
+    if profile.height_cm is not None:
+        parts.append(f"{profile.height_cm:g}cm")
+    if profile.weight_kg is not None:
+        parts.append(f"{profile.weight_kg:g}kg")
+    if profile.activity_level:
+        parts.append(profile.activity_level)
+    label = ", ".join(parts) if parts else "partial profile"
+    return f"[dim]Targets: profile-based estimate ({label}).[/]"

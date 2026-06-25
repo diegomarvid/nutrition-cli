@@ -2,11 +2,11 @@ from __future__ import annotations
 
 import json
 import sqlite3
-from datetime import UTC, datetime
+from datetime import UTC, date as Date, datetime
 from pathlib import Path
 from typing import Any, Iterable
 
-from .models import ParsedItem, ParsedMeal
+from .models import ParsedItem, ParsedMeal, UserProfile
 
 
 SCHEMA = """
@@ -78,6 +78,16 @@ CREATE TABLE IF NOT EXISTS food_portions (
 );
 
 CREATE INDEX IF NOT EXISTS idx_food_portions_fdc ON food_portions(fdc_id);
+
+CREATE TABLE IF NOT EXISTS user_profiles (
+  id INTEGER PRIMARY KEY CHECK (id = 1),
+  birth_date TEXT,
+  sex TEXT,
+  height_cm REAL,
+  weight_kg REAL,
+  activity_level TEXT,
+  updated_at TEXT NOT NULL
+);
 """
 
 
@@ -106,6 +116,52 @@ def ensure_schema_migrations(conn: sqlite3.Connection) -> None:
     }
     if "default_quantity_g" not in alias_columns:
         conn.execute("ALTER TABLE food_aliases ADD COLUMN default_quantity_g REAL")
+
+
+def get_user_profile(conn: sqlite3.Connection) -> UserProfile | None:
+    row = conn.execute("SELECT * FROM user_profiles WHERE id = 1").fetchone()
+    if row is None:
+        return None
+    return UserProfile(
+        birth_date=Date.fromisoformat(row["birth_date"]) if row["birth_date"] else None,
+        sex=row["sex"],
+        height_cm=row["height_cm"],
+        weight_kg=row["weight_kg"],
+        activity_level=row["activity_level"],
+    )
+
+
+def upsert_user_profile(conn: sqlite3.Connection, profile: UserProfile) -> None:
+    conn.execute(
+        """
+        INSERT INTO user_profiles(
+          id, birth_date, sex, height_cm, weight_kg, activity_level, updated_at
+        )
+        VALUES (1, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT(id) DO UPDATE SET
+          birth_date = excluded.birth_date,
+          sex = excluded.sex,
+          height_cm = excluded.height_cm,
+          weight_kg = excluded.weight_kg,
+          activity_level = excluded.activity_level,
+          updated_at = excluded.updated_at
+        """,
+        (
+            profile.birth_date.isoformat() if profile.birth_date else None,
+            profile.sex,
+            profile.height_cm,
+            profile.weight_kg,
+            profile.activity_level,
+            now_iso(),
+        ),
+    )
+    conn.commit()
+
+
+def delete_user_profile(conn: sqlite3.Connection) -> int:
+    cur = conn.execute("DELETE FROM user_profiles WHERE id = 1")
+    conn.commit()
+    return cur.rowcount
 
 
 def get_alias(conn: sqlite3.Connection, alias: str) -> sqlite3.Row | None:

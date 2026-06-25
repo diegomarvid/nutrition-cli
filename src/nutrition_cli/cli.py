@@ -6,6 +6,7 @@ from datetime import date, datetime, timedelta
 from pathlib import Path
 
 import typer
+from pydantic import ValidationError
 from rich.console import Console
 from rich.table import Table
 
@@ -15,10 +16,13 @@ from .database import (
     connect,
     cached_food,
     delete_alias,
+    delete_user_profile,
     food_description,
     get_alias,
+    get_user_profile,
     init_db,
     list_aliases,
+    upsert_user_profile,
     upsert_alias,
     upsert_food_detail,
 )
@@ -27,14 +31,16 @@ from .parser import parse_meal
 from .reports import load_report, render_report, week_window
 from .seed_data import seed_common_foods, seed_food
 from .units import estimate_grams, normalize_unit
-from .models import ParsedMeal
+from .models import ParsedMeal, UserProfile
 
 
 app = typer.Typer(help="Local-first nutrition logger.")
 alias_app = typer.Typer(help="Manage personal food aliases.")
 label_app = typer.Typer(help="Manage local label-based foods.")
+profile_app = typer.Typer(help="Manage the local user profile used for target estimates.")
 app.add_typer(alias_app, name="alias")
 app.add_typer(label_app, name="label")
+app.add_typer(profile_app, name="profile")
 console = Console()
 
 
@@ -57,9 +63,17 @@ def parse_date(value: str | None) -> date:
 @app.command()
 def init(
     db: Path = typer.Option(default_factory=db_option, help="SQLite database path."),
+    setup_profile: bool = typer.Option(
+        True,
+        "--profile/--no-profile",
+        help="Prompt for local profile setup when running interactively.",
+    ),
 ) -> None:
     """Create the local SQLite database."""
     conn = open_db(db)
+    if setup_profile and sys.stdin.isatty() and get_user_profile(conn) is None:
+        if typer.confirm("Set local profile for nutrition target estimates now?", default=True):
+            prompt_and_save_profile(conn, existing=None)
     conn.close()
     console.print(f"Initialized [bold]{db}[/]")
 
@@ -71,6 +85,7 @@ def doctor(
     """Show local configuration and API-key status."""
     conn = open_db(db)
     aliases = len(list_aliases(conn))
+    profile = get_user_profile(conn)
     conn.close()
     api_key = fdc_api_key()
     table = Table(show_header=False)
@@ -78,6 +93,7 @@ def doctor(
     table.add_column("Value")
     table.add_row("DB", str(db))
     table.add_row("Aliases", str(aliases))
+    table.add_row("Profile", "configured" if profile else "missing (run `nutrition profile set`)")
     table.add_row("FDC key", "DEMO_KEY (testing)" if api_key == "DEMO_KEY" else "configured")
     table.add_row("Model", "assistant in chat; no OpenAI key inside CLI")
     console.print(table)
@@ -430,6 +446,157 @@ def label_food_payload(
         "foodNutrients": nutrients,
         "foodPortions": portions,
     }
+
+
+@profile_app.command("set")
+def profile_set(
+    birth_date: str | None = typer.Option(None, help="Birth date, YYYY-MM-DD."),
+    sex: str | None = typer.Option(None, help="male, female, or other. Spanish aliases also work."),
+    height_cm: float | None = typer.Option(None, help="Height in centimeters."),
+    weight_kg: float | None = typer.Option(None, help="Weight in kilograms."),
+    activity: str | None = typer.Option(
+        None,
+        "--activity",
+        "--activity-level",
+        help="sedentary, light, moderate, active, or very-active.",
+    ),
+    interactive: bool = typer.Option(True, "--interactive/--no-interactive", help="Prompt for missing fields in a TTY."),
+    db: Path = typer.Option(default_factory=db_option, help="SQLite database path."),
+) -> None:
+    """Create or update the local profile used for target estimates."""
+    conn = open_db(db)
+    existing = get_user_profile(conn)
+    provided_any = any(
+        value is not None
+        for value in [birth_date, sex, height_cm, weight_kg, activity]
+    )
+    prompt = interactive and sys.stdin.isatty() and not provided_any
+    if not prompt and not provided_any and existing is None:
+        console.print("[yellow]No profile values provided. Run interactively or pass profile options.[/]")
+        raise typer.Exit(1)
+    profile = collect_profile(
+        existing=existing,
+        birth_date=birth_date,
+        sex=sex,
+        height_cm=height_cm,
+        weight_kg=weight_kg,
+        activity_level=activity,
+        prompt=prompt,
+    )
+    upsert_user_profile(conn, profile)
+    render_profile(profile)
+
+
+@profile_app.command("show")
+def profile_show(
+    db: Path = typer.Option(default_factory=db_option, help="SQLite database path."),
+) -> None:
+    """Show the local profile."""
+    conn = open_db(db)
+    profile = get_user_profile(conn)
+    if profile is None:
+        console.print("[yellow]No profile configured. Run `nutrition profile set`.[/]")
+        return
+    render_profile(profile)
+
+
+@profile_app.command("clear")
+def profile_clear(
+    db: Path = typer.Option(default_factory=db_option, help="SQLite database path."),
+) -> None:
+    """Delete the local profile."""
+    conn = open_db(db)
+    removed = delete_user_profile(conn)
+    console.print("Profile deleted." if removed else "No profile configured.")
+
+
+def prompt_and_save_profile(conn, existing: UserProfile | None) -> UserProfile:
+    profile = collect_profile(
+        existing=existing,
+        birth_date=None,
+        sex=None,
+        height_cm=None,
+        weight_kg=None,
+        activity_level=None,
+        prompt=True,
+    )
+    upsert_user_profile(conn, profile)
+    render_profile(profile)
+    return profile
+
+
+def collect_profile(
+    *,
+    existing: UserProfile | None,
+    birth_date: str | None,
+    sex: str | None,
+    height_cm: float | str | None,
+    weight_kg: float | str | None,
+    activity_level: str | None,
+    prompt: bool,
+) -> UserProfile:
+    data = {
+        "birth_date": existing.birth_date.isoformat() if existing and existing.birth_date else None,
+        "sex": existing.sex if existing else None,
+        "height_cm": existing.height_cm if existing else None,
+        "weight_kg": existing.weight_kg if existing else None,
+        "activity_level": existing.activity_level if existing else None,
+    }
+    updates = {
+        "birth_date": birth_date,
+        "sex": sex,
+        "height_cm": height_cm,
+        "weight_kg": weight_kg,
+        "activity_level": activity_level,
+    }
+    for key, value in updates.items():
+        if value is not None:
+            data[key] = value
+
+    if prompt:
+        data["birth_date"] = prompt_optional("Birth date (YYYY-MM-DD)", data["birth_date"])
+        data["sex"] = prompt_optional("Sex/gender for nutrient targets (male/female/other)", data["sex"])
+        data["height_cm"] = prompt_optional("Height in cm", format_optional_number(data["height_cm"]))
+        data["weight_kg"] = prompt_optional("Weight in kg", format_optional_number(data["weight_kg"]))
+        data["activity_level"] = prompt_optional(
+            "Activity (sedentary/light/moderate/active/very-active)",
+            data["activity_level"] or "light",
+        )
+
+    try:
+        return UserProfile.model_validate(data)
+    except ValidationError as exc:
+        console.print(f"[red]Invalid profile:[/] {exc}")
+        raise typer.Exit(1) from exc
+
+
+def prompt_optional(label: str, default: str | None) -> str | None:
+    default = default or ""
+    value = typer.prompt(label, default=default, show_default=bool(default))
+    value = value.strip()
+    return value or None
+
+
+def format_optional_number(value: float | str | None) -> str | None:
+    if value is None:
+        return None
+    if isinstance(value, str):
+        return value
+    return f"{value:g}"
+
+
+def render_profile(profile: UserProfile) -> None:
+    table = Table(show_header=False)
+    table.add_column("Field")
+    table.add_column("Value")
+    age = profile.age_on(date.today())
+    table.add_row("Birth date", profile.birth_date.isoformat() if profile.birth_date else "")
+    table.add_row("Age", "" if age is None else str(age))
+    table.add_row("Sex/gender target category", profile.sex or "")
+    table.add_row("Height", "" if profile.height_cm is None else f"{profile.height_cm:g} cm")
+    table.add_row("Weight", "" if profile.weight_kg is None else f"{profile.weight_kg:g} kg")
+    table.add_row("Activity", profile.activity_level or "")
+    console.print(table)
 
 
 def resolve_alias(conn, client: FdcClient, alias: str, yes: bool) -> int | None:
