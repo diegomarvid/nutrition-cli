@@ -110,6 +110,10 @@ comí 500g de muslo de pollo cocido con piel, 1 taza de arroz blanco cocido y un
 
 ## Assistant workflow
 
+Agent-specific operating rules live in [`AGENTS.md`](AGENTS.md). In particular,
+that file defines how assistants should handle `unknown` and partial-coverage
+nutrients: do not invent numeric totals, but do not ignore important gaps.
+
 When using this repo with an LLM assistant, the assistant should start by checking:
 
 ```bash
