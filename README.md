@@ -138,6 +138,55 @@ uv run nutrition profile set \
 The profile is required for better "high/low" feedback. It is still local
 runtime data and must not be committed.
 
+## Where the numbers come from
+
+The CLI keeps food facts and daily targets separate.
+
+Food nutrient values come from:
+
+- [USDA FoodData Central](https://fdc.nal.usda.gov/) detail responses, cached in
+  SQLite per food.
+- Local package labels added by the user with `nutrition label add`.
+
+The LLM assistant can help structure what the user ate, but it should not invent
+nutrient values. Reports multiply cached nutrient values per 100 g by the logged
+quantity in grams.
+
+Daily target values come from public nutrition reference guidance, not from
+FoodData Central. The code uses Dietary Reference Intake-style references from
+the Food and Nutrition Board / National Academies, surfaced by NIH Office of
+Dietary Supplements resources such as:
+
+- [NIH ODS nutrient recommendations](https://ods.od.nih.gov/HealthInformation/nutrientrecommendations.aspx)
+- [NIH ODS calcium fact sheet](https://ods.od.nih.gov/factsheets/Calcium-HealthProfessional/)
+- [NIH ODS vitamin K fact sheet](https://ods.od.nih.gov/factsheets/VitaminK-Consumer/)
+
+The local profile is used as follows:
+
+- Birth date and sex/gender target category choose age/sex-specific targets for
+  nutrients such as calcium, iron, magnesium, potassium, zinc, vitamin A,
+  vitamin C, and vitamin K.
+- Height, weight, age, sex/gender target category, and activity level estimate
+  daily calories using the
+  [Mifflin-St Jeor equation](https://www.ncbi.nlm.nih.gov/books/NBK278991/table/diet-treatment-obes.table12est/)
+  plus an activity factor.
+- Weight estimates a baseline protein target using `0.8 g/kg/day`. This is a
+  general adequacy floor, not an athletic or muscle-gain target.
+- Fat and carbohydrate targets are rough defaults derived from the estimated
+  calorie target. They are practical reporting anchors, not a personalized diet
+  prescription.
+
+The "low / ok / high" labels are intentionally simple:
+
+- Less than 75% of the daily target is `low`.
+- 75% to 110% is `ok`.
+- More than 110% is `high`.
+- Calories, fat, and sodium are treated as upper-limit-style values, so `high`
+  is shown as something to watch rather than a win.
+
+These targets are useful for habit feedback and gap spotting. They are not a
+medical diagnosis, and individual needs can differ from reference values.
+
 ## Usage
 
 ```bash
