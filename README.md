@@ -112,7 +112,9 @@ comí 500g de muslo de pollo cocido con piel, 1 taza de arroz blanco cocido y un
 
 Agent-specific operating rules live in [`AGENTS.md`](AGENTS.md). In particular,
 that file defines how assistants should handle `unknown` and partial-coverage
-nutrients: do not invent numeric totals, but do not ignore important gaps.
+nutrients: do not invent numeric totals, but do not ignore important gaps. It
+also requires a final sanity check of quantities, food mappings, coverage, and
+outliers before turning the CLI table into a spoken report.
 
 When using this repo with an LLM assistant, the assistant should start by checking:
 
@@ -205,6 +207,11 @@ every resolved item had data for that nutrient. `25% (1/2)` means only 25% of
 the logged grams, across 1 of 2 resolved items, had that nutrient available. A
 status with `?`, such as `low?`, should be read as "possibly low, but the source
 data is incomplete", not as a definitive deficiency.
+
+The CLI report is an evidence packet for the assistant, not the final user-facing
+analysis. Assistants should sanity-check quantities, mappings, coverage, and
+outliers before summarizing; if the table looks inconsistent with the user's
+description, correct or flag it rather than repeating it blindly.
 
 Current strategy for missing nutrient data:
 

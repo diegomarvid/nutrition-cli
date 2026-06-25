@@ -16,7 +16,7 @@ from nutrition_cli.database import (
 )
 from nutrition_cli.cli import label_food_payload
 from nutrition_cli.models import ParsedItem, ParsedMeal, UserProfile
-from nutrition_cli.reports import build_targets, has_missing_or_partial_coverage, load_report
+from nutrition_cli.reports import assistant_handoff_lines, build_targets, has_missing_or_partial_coverage, load_report
 
 
 def test_report_aggregates_per_100g(tmp_path):
@@ -122,6 +122,9 @@ def test_report_tracks_partial_nutrient_coverage(tmp_path):
     assert report.coverage["301"].known_items == 1
     assert report.coverage["301"].gram_percent == 0.25
     assert has_missing_or_partial_coverage(report)
+    handoff = assistant_handoff_lines(report)
+    assert any("Sanity-check quantities" in line for line in handoff)
+    assert any("unknown/partial nutrients" in line for line in handoff)
 
 
 def test_report_tracks_detailed_fatty_acids_without_double_counting_ala(tmp_path):

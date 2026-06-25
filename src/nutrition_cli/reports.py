@@ -298,12 +298,8 @@ def render_report(report: Report, console: Console, brutal: bool = True) -> None
     if has_partial_coverage(report):
         console.print("[dim]? = source data is partial for that nutrient; check the Data column.[/]")
 
-    if has_missing_or_partial_coverage(report):
-        console.print(
-            "[dim]Assistant rule: unknown/partial nutrients exist. When analyzing this report, "
-            "name important gaps and give clearly labeled AI judgment or research-based opinion "
-            "instead of ignoring them.[/]"
-        )
+    for line in assistant_handoff_lines(report):
+        console.print(f"[dim]{line}[/]")
 
     if report.unresolved_items:
         console.print("[yellow]Unresolved items:[/] " + ", ".join(report.unresolved_items))
@@ -397,6 +393,19 @@ def has_missing_or_partial_coverage(report: Report) -> bool:
         if coverage.known_items > 0 and percent is not None and percent < LOW_COVERAGE_THRESHOLD:
             return True
     return False
+
+
+def assistant_handoff_lines(report: Report) -> list[str]:
+    lines = [
+        "Assistant handoff: use this table as evidence, not as the final answer. "
+        "Sanity-check quantities, food mappings, coverage, and suspicious outliers before summarizing."
+    ]
+    if has_missing_or_partial_coverage(report):
+        lines.append(
+            "Assistant rule: unknown/partial nutrients exist. Name important gaps and give clearly labeled "
+            "AI judgment or research-based opinion instead of ignoring them."
+        )
+    return lines
 
 
 def add_derived_epa_dha(

@@ -70,16 +70,34 @@ important nutrients currently tracked by the project:
 - vitamins and related nutrients: vitamin A, vitamin C, vitamin D, vitamin E,
   vitamin K, B1, B2, B3, B6, folate, B12, pantothenic acid, choline
 
+The table is evidence, not the final answer. Before giving the user the spoken
+report, do a final consistency pass:
+
+- Check whether quantities make sense against the user's wording. If a number
+  looks too large or too small, inspect `nutrition audit log` and ask/correct
+  rather than blindly trusting it.
+- Check whether the chosen food mapping is plausible. A generic USDA food can be
+  close enough, but branded foods, package labels, cooked/raw swaps, bones,
+  drained weights, and household portions can materially change the result.
+- Check coverage. A status with `?`, `unknown`, or low Data coverage is not as
+  strong as a fully covered measured value.
+- Check outliers. Very high calories, sodium, fat, protein, or surprisingly high
+  micronutrients should be explained or sanity-checked.
+- If the CLI and common sense disagree, say so. The final answer should reflect
+  the assistant's judgment, with the CLI cited as supporting evidence.
+
 For every analysis, use this structure:
 
 1. Summarize measured highs/lows from the CLI table.
 2. Name important `unknown` or partial-coverage nutrients instead of skipping
    them.
-3. For those gaps, take a position in prose using nutrition knowledge and, when
+3. Mention any suspect quantities, mappings, or outliers that may need
+   correction.
+4. For gaps and suspicious values, take a position in prose using nutrition knowledge and, when
    useful, reputable sources. Mark it as "AI judgment", "inference", or
    "research-based opinion".
-4. Separate measured facts from inferred advice.
-5. Give practical food suggestions that fit the user's stated preferences.
+5. Separate measured facts from inferred advice.
+6. Give practical food suggestions that fit the user's stated preferences.
 
 Example stance:
 

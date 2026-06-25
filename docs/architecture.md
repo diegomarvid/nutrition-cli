@@ -61,6 +61,12 @@ the logged food did the source data contain this nutrient?" A low value with
 partial coverage is not treated as equally certain as a low value with full
 coverage.
 
+The report table is an evidence packet for the assistant, not the final
+user-facing analysis. The assistant is expected to sanity-check quantities, food
+mappings, coverage, and outliers before speaking to the user. If the CLI output
+looks inconsistent with the user's description, the assistant should inspect the
+audit trail, correct or flag the issue, and then explain the final judgment.
+
 Missing values are not imputed into numeric totals. The safe hierarchy is:
 
 1. Use complete USDA generic foods for nutrient-rich analysis.
