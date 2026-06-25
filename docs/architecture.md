@@ -21,7 +21,9 @@ cached food_nutrients + user_profiles + reports
 
 ## Data boundaries
 
-The assistant may infer structure and quantities from the user's message. It must not invent nutrient values.
+The assistant may infer structure and quantities from the user's message. It must
+not invent numeric nutrient values; food-pattern heuristics belong in a separate
+comment.
 
 Nutrient amounts come from cached FoodData Central detail responses or from local rows manually inserted by the user.
 Packaged-product labels should be added to the local SQLite database with
@@ -44,6 +46,9 @@ estimates.
 - Weight estimates baseline protein at `0.8 g/kg/day`.
 - Fat and carbohydrate targets are derived from estimated calories as pragmatic
   reporting anchors.
+- ALA omega-3 uses age/sex adequate-intake targets. EPA, DHA, DPA, MUFA, and
+  PUFA are tracked when source data contains them; EPA/DHA do not receive an
+  official DRI target.
 
 The status labels are a display heuristic: less than 75% of target is `low`,
 75% to 110% is `ok`, and more than 110% is `high`. Sodium, saturated fat, and
@@ -55,14 +60,17 @@ the logged food did the source data contain this nutrient?" A low value with
 partial coverage is not treated as equally certain as a low value with full
 coverage.
 
-Missing values are not imputed. The safe hierarchy is:
+Missing values are not imputed into numeric totals. The safe hierarchy is:
 
 1. Use complete USDA generic foods for nutrient-rich analysis.
 2. Use branded foods and labels for product identity and label nutrients.
 3. Add package-label foods locally when the user has the label.
 4. Add optional product/barcode sources, such as Open Food Facts, only as another
    source with explicit coverage and provenance.
-5. Never let the assistant invent micronutrient values.
+5. Add a clearly separated heuristic note when useful, especially for healthy
+   fats and omega-3, so missing source data does not make the report silent.
+   The note can use food-pattern judgment, but the numeric rows remain
+   source-based.
 
 ## API rate limits
 

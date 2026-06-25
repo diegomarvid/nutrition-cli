@@ -43,6 +43,12 @@ BASE_TARGETS = {
     "291": nutrient("291", "Fiber", "g", 28, "macros", nutrient_id=1079),
     "618": nutrient("618", "Linoleic acid", "g", 17, "fatty acids", note="omega-6 AI"),
     "619": nutrient("619", "Alpha-linolenic acid", "g", 1.6, "fatty acids", note="omega-3 AI"),
+    "629": nutrient("629", "EPA", "g", None, "fatty acids", note="omega-3; no official DRI target"),
+    "621": nutrient("621", "DHA", "g", None, "fatty acids", note="omega-3; no official DRI target"),
+    "631": nutrient("631", "DPA", "g", None, "fatty acids", note="omega-3; no official DRI target"),
+    "EPA_DHA": nutrient("EPA_DHA", "EPA + DHA", "g", None, "fatty acids", note="derived tracked value"),
+    "645": nutrient("645", "Monounsaturated fat", "g", None, "fatty acids", nutrient_id=1292),
+    "646": nutrient("646", "Polyunsaturated fat", "g", None, "fatty acids", nutrient_id=1293),
     "301": nutrient("301", "Calcium", "mg", 1000, "minerals", nutrient_id=1087),
     "305": nutrient("305", "Phosphorus", "mg", 700, "minerals", nutrient_id=1091),
     "303": nutrient("303", "Iron", "mg", 8, "minerals", nutrient_id=1089),
@@ -80,6 +86,12 @@ DISPLAY_ORDER = [
     "291",
     "618",
     "619",
+    "629",
+    "621",
+    "631",
+    "EPA_DHA",
+    "645",
+    "646",
     "301",
     "305",
     "303",
@@ -109,6 +121,61 @@ UPPER_LIMIT_NUMBERS = {"606", "605", "307"}
 HIGH_WARNING_NUMBERS = {"208", "204", *UPPER_LIMIT_NUMBERS}
 NO_TARGET_STATUS = "[dim]tracked[/]"
 LOW_COVERAGE_THRESHOLD = 0.75
+NUTRIENT_NUMBER_ALIASES = {
+    "851": "619",  # 18:3 n-3 c,c,c (ALA), used by some FDC records.
+}
+DETAILED_FAT_KEYS = ("619", "629", "621", "631", "645", "646")
+OMEGA3_SOURCE_KEYWORDS = (
+    "salmon",
+    "sardine",
+    "sardina",
+    "mackerel",
+    "caballa",
+    "herring",
+    "arenque",
+    "anchovy",
+    "anchoa",
+    "trout",
+    "trucha",
+    "tuna",
+    "atun",
+    "atún",
+    "fish oil",
+    "cod liver",
+    "chia",
+    "flax",
+    "linseed",
+    "lino",
+    "walnut",
+    "nuez",
+    "canola",
+)
+UNSATURATED_FAT_SOURCE_KEYWORDS = (
+    "olive oil",
+    "aceite de oliva",
+    "avocado",
+    "palta",
+    "almond",
+    "almendra",
+    "peanut",
+    "mani",
+    "maní",
+    "walnut",
+    "nuez",
+    "pistachio",
+    "pistacho",
+    "cashew",
+    "castaña",
+    "hazelnut",
+    "avellana",
+    "sesame",
+    "sesamo",
+    "sésamo",
+    "tahini",
+    "chia",
+    "flax",
+    "lino",
+)
 ACTIVITY_FACTORS = {
     "sedentary": 1.2,
     "light": 1.375,
@@ -139,6 +206,14 @@ class NutrientCoverage:
 
 
 @dataclass
+class FoodItemSummary:
+    alias: str
+    description: str | None
+    quantity_g: float | None
+    fdc_id: int | None
+
+
+@dataclass
 class Report:
     start_date: date
     end_date: date
@@ -148,6 +223,7 @@ class Report:
     item_count: int
     unresolved_items: list[str]
     coverage: dict[str, NutrientCoverage]
+    items: list[FoodItemSummary]
     profile: UserProfile | None = None
 
 
@@ -165,12 +241,14 @@ def load_report(conn, start: date, end: date) -> Report:
           mi.food_alias,
           mi.quantity_g,
           mi.fdc_id,
+          f.description,
           fn.nutrient_number,
           fn.nutrient_id,
           fn.amount_per_100g,
           fn.unit
         FROM meal_items mi
         JOIN meal_logs ml ON ml.id = mi.meal_log_id
+        LEFT JOIN foods f ON f.fdc_id = mi.fdc_id
         LEFT JOIN food_nutrients fn ON fn.fdc_id = mi.fdc_id
         WHERE ml.date >= ? AND ml.date <= ?
         """,
@@ -182,11 +260,19 @@ def load_report(conn, start: date, end: date) -> Report:
     unresolved = set()
     item_ids = set()
     resolved_items: dict[int, float] = {}
+    item_summaries: dict[int, FoodItemSummary] = {}
     known_items: dict[str, set[int]] = defaultdict(set)
     known_grams_by_item: dict[str, dict[int, float]] = defaultdict(dict)
+    seen_item_nutrients: set[tuple[int, str]] = set()
     for row in rows:
         item_id = int(row["meal_item_id"])
         item_ids.add(item_id)
+        item_summaries[item_id] = FoodItemSummary(
+            alias=row["food_alias"],
+            description=row["description"],
+            quantity_g=row["quantity_g"],
+            fdc_id=row["fdc_id"],
+        )
         if row["fdc_id"] is None or row["quantity_g"] is None:
             unresolved.add(row["food_alias"])
             continue
@@ -194,16 +280,21 @@ def load_report(conn, start: date, end: date) -> Report:
         resolved_items[item_id] = quantity_g
         if row["nutrient_number"] is None:
             continue
-        key = target_by_number.get(str(row["nutrient_number"]))
+        raw_number = str(row["nutrient_number"])
+        key = NUTRIENT_NUMBER_ALIASES.get(raw_number) or target_by_number.get(raw_number)
         if key is None and row["nutrient_id"] is not None:
             key = target_by_id.get(int(row["nutrient_id"]))
         if key is None:
             continue
+        if (item_id, key) in seen_item_nutrients:
+            continue
+        seen_item_nutrients.add((item_id, key))
         totals[key] += (row["amount_per_100g"] or 0) * quantity_g / 100
         units[key] = row["unit"]
         known_items[key].add(item_id)
         known_grams_by_item[key][item_id] = quantity_g
 
+    add_derived_epa_dha(totals, units, known_items, known_grams_by_item, resolved_items)
     coverage = {}
     total_grams = sum(resolved_items.values())
     for key in BASE_TARGETS:
@@ -225,6 +316,7 @@ def load_report(conn, start: date, end: date) -> Report:
         item_count=len(item_ids),
         unresolved_items=sorted(unresolved),
         coverage=coverage,
+        items=list(item_summaries.values()),
         profile=get_user_profile(conn),
     )
 
@@ -279,6 +371,13 @@ def render_report(report: Report, console: Console, brutal: bool = True) -> None
 
     if report.unresolved_items:
         console.print("[yellow]Unresolved items:[/] " + ", ".join(report.unresolved_items))
+
+    fat_notes = healthy_fat_notes(report, targets)
+    if fat_notes:
+        console.print()
+        console.print("[bold]Criterio IA para grasas saludables:[/]")
+        for note in fat_notes:
+            console.print("- " + note)
 
     if brutal and (low_labels or over_labels):
         console.print()
@@ -359,6 +458,103 @@ def has_partial_coverage(report: Report) -> bool:
         if coverage.known_items > 0 and percent is not None and percent < LOW_COVERAGE_THRESHOLD:
             return True
     return False
+
+
+def add_derived_epa_dha(
+    totals: dict[str, float],
+    units: dict[str, str],
+    known_items: dict[str, set[int]],
+    known_grams_by_item: dict[str, dict[int, float]],
+    resolved_items: dict[int, float],
+) -> None:
+    totals["EPA_DHA"] = totals.get("629", 0) + totals.get("621", 0)
+    units["EPA_DHA"] = "g"
+    item_ids = known_items.get("629", set()) & known_items.get("621", set())
+    if not item_ids:
+        return
+    known_items["EPA_DHA"] = item_ids
+    known_grams_by_item["EPA_DHA"] = {
+        item_id: resolved_items[item_id]
+        for item_id in item_ids
+        if item_id in resolved_items
+    }
+
+
+def healthy_fat_notes(report: Report, targets: dict[str, NutrientTarget]) -> list[str]:
+    if not report.items:
+        return []
+
+    notes = []
+    detailed_coverages = [report.coverage.get(key, NutrientCoverage(total_items=0)) for key in DETAILED_FAT_KEYS]
+    has_detailed_data = any(coverage.known_items > 0 for coverage in detailed_coverages)
+    partial_labels = [
+        targets[key].label
+        for key in DETAILED_FAT_KEYS
+        if key in targets and is_partial_coverage(report.coverage.get(key, NutrientCoverage(total_items=0)))
+    ]
+    if not has_detailed_data:
+        notes.append(
+            "No vino data detallada de acidos grasos para este log; omega-3, MUFA y PUFA quedan como desconocidos numericos."
+        )
+    elif partial_labels:
+        notes.append(
+            "La data detallada de grasas esta incompleta para: " + ", ".join(partial_labels[:6]) + "."
+        )
+
+    ala_target = targets["619"].target or 0
+    ala_amount = report.totals.get("619", 0) / report.days
+    ala_coverage = report.coverage.get("619", NutrientCoverage(total_items=0))
+    if ala_target and ala_coverage.known_items > 0 and ala_amount < ala_target * 0.75:
+        notes.append(f"ALA/omega-3 vegetal figura bajo: {ala_amount:.1f}g vs {ala_target:g}g/dia.")
+
+    epa_dha_amount = report.totals.get("EPA_DHA", 0) / report.days
+    epa_dha_coverage = report.coverage.get("EPA_DHA", NutrientCoverage(total_items=0))
+    if epa_dha_coverage.known_items > 0 and epa_dha_amount < 0.05:
+        notes.append("EPA+DHA aparece casi en cero; eso suele pasar cuando no hubo pescado graso o mariscos.")
+
+    has_numeric_omega3 = (
+        (ala_coverage.known_items > 0 and ala_amount > 0.05)
+        or (epa_dha_coverage.known_items > 0 and epa_dha_amount > 0.05)
+    )
+    mufa_amount = report.totals.get("645", 0) / report.days
+    pufa_amount = report.totals.get("646", 0) / report.days
+    mufa_coverage = report.coverage.get("645", NutrientCoverage(total_items=0))
+    pufa_coverage = report.coverage.get("646", NutrientCoverage(total_items=0))
+    has_numeric_unsaturated = (
+        (mufa_coverage.known_items > 0 and mufa_amount > 0.5)
+        or (pufa_coverage.known_items > 0 and pufa_amount > 0.5)
+    )
+
+    omega3_sources = matching_foods(report.items, OMEGA3_SOURCE_KEYWORDS)
+    unsaturated_sources = matching_foods(report.items, UNSATURATED_FAT_SOURCE_KEYWORDS)
+    if not omega3_sources and not has_numeric_omega3:
+        notes.append(
+            "Heuristica: no detecte una fuente obvia de omega-3. Sumaria pescado graso, chia/lino o nueces."
+        )
+    if not unsaturated_sources and not has_numeric_unsaturated:
+        notes.append(
+            "Heuristica: tampoco detecte un ancla clara de grasas insaturadas. Aceite de oliva, palta o frutos secos ayudan con MUFA/PUFA."
+        )
+    elif not omega3_sources and not has_numeric_omega3:
+        notes.append(
+            "Ojo: aceite de oliva/palta/frutos secos pueden mejorar grasas insaturadas, pero para omega-3 conviene una fuente especifica."
+        )
+
+    return notes
+
+
+def is_partial_coverage(coverage: NutrientCoverage) -> bool:
+    percent = coverage.gram_percent
+    return coverage.known_items > 0 and percent is not None and percent < LOW_COVERAGE_THRESHOLD
+
+
+def matching_foods(items: list[FoodItemSummary], keywords: tuple[str, ...]) -> list[str]:
+    matches = []
+    for item in items:
+        haystack = " ".join(filter(None, [item.alias, item.description])).lower()
+        if any(keyword in haystack for keyword in keywords):
+            matches.append(item.alias)
+    return sorted(set(matches))
 
 
 def build_targets(profile: UserProfile | None, day: date) -> dict[str, NutrientTarget]:

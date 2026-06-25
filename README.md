@@ -150,8 +150,8 @@ Food nutrient values come from:
 - Local package labels added by the user with `nutrition label add`.
 
 The LLM assistant can help structure what the user ate, but it should not invent
-nutrient values. Reports multiply cached nutrient values per 100 g by the logged
-quantity in grams.
+numeric nutrient values. Reports multiply cached nutrient values per 100 g by
+the logged quantity in grams; heuristic comments are displayed separately.
 
 Daily target values come from public nutrition reference guidance, not from
 FoodData Central. The code uses Dietary Reference Intake-style references from
@@ -161,6 +161,7 @@ Dietary Supplements resources such as:
 - [NIH ODS nutrient recommendations](https://ods.od.nih.gov/HealthInformation/nutrientrecommendations.aspx)
 - [NIH ODS calcium fact sheet](https://ods.od.nih.gov/factsheets/Calcium-HealthProfessional/)
 - [NIH ODS vitamin K fact sheet](https://ods.od.nih.gov/factsheets/VitaminK-Consumer/)
+- [NIH ODS omega-3 fact sheet](https://ods.od.nih.gov/factsheets/Omega3FattyAcids-HealthProfessional/)
 
 The local profile is used as follows:
 
@@ -176,6 +177,10 @@ The local profile is used as follows:
 - Fat and carbohydrate targets are rough defaults derived from the estimated
   calorie target. They are practical reporting anchors, not a personalized diet
   prescription.
+- Alpha-linolenic acid (ALA) uses age/sex adequate-intake targets. EPA and DHA
+  are tracked when source data contains them, but the report does not present an
+  official DRI target for them because public recommendations are established
+  for ALA, not EPA/DHA.
 
 The "low / ok / high" labels are intentionally simple:
 
@@ -210,8 +215,10 @@ Current strategy for missing nutrient data:
   databases can be useful, but they are also community/product-label driven, so
   the CLI should still mark coverage instead of pretending every nutrient is
   known.
-- Do not silently impute missing micronutrients from the LLM. If an estimate is
-  ever added, it should be explicitly marked as estimated.
+- Do not silently impute missing micronutrients into numeric totals. Numeric
+  report rows stay source-based. The report may add a separate heuristic note
+  when important data is missing, for example: no detailed omega-3 values were
+  available, but the logged foods do not look like obvious omega-3 sources.
 
 ## Usage
 
@@ -274,6 +281,17 @@ uv run nutrition label add "my canned corn" \
   --default-quantity-g 285 \
   --source-ref /absolute/path/to/label-photo.jpg \
   --alias "my corn can"
+```
+
+Local labels can also store detailed fats when available:
+
+```bash
+uv run nutrition label add "omega 3 supplement" \
+  --serving-g 1 \
+  --fat 1 \
+  --epa 0.18 \
+  --dha 0.12 \
+  --default-quantity-g 1
 ```
 
 ## Audit trail

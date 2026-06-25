@@ -14,8 +14,9 @@ from nutrition_cli.database import (
     upsert_alias,
     upsert_user_profile,
 )
+from nutrition_cli.cli import label_food_payload
 from nutrition_cli.models import ParsedItem, ParsedMeal, UserProfile
-from nutrition_cli.reports import build_targets, load_report
+from nutrition_cli.reports import build_targets, healthy_fat_notes, load_report
 
 
 def test_report_aggregates_per_100g(tmp_path):
@@ -120,6 +121,174 @@ def test_report_tracks_partial_nutrient_coverage(tmp_path):
     assert report.coverage["208"].gram_percent == 1
     assert report.coverage["301"].known_items == 1
     assert report.coverage["301"].gram_percent == 0.25
+
+
+def test_report_tracks_detailed_fatty_acids_without_double_counting_ala(tmp_path):
+    conn = connect(tmp_path / "nutrition.db")
+    init_db(conn)
+    upsert_food_detail(
+        conn,
+        {
+            "fdcId": 1,
+            "description": "Seeds, chia seeds, dried",
+            "foodNutrients": [
+                {"nutrient": {"number": "619", "id": 1270, "name": "PUFA 18:3", "unitName": "g"}, "amount": 17.83},
+                {
+                    "nutrient": {
+                        "number": "851",
+                        "id": 1404,
+                        "name": "PUFA 18:3 n-3 c,c,c (ALA)",
+                        "unitName": "g",
+                    },
+                    "amount": 17.83,
+                },
+                {
+                    "nutrient": {
+                        "number": "646",
+                        "id": 1293,
+                        "name": "Fatty acids, total polyunsaturated",
+                        "unitName": "g",
+                    },
+                    "amount": 23.7,
+                },
+            ],
+        },
+    )
+    upsert_food_detail(
+        conn,
+        {
+            "fdcId": 2,
+            "description": "Fish, salmon, raw",
+            "foodNutrients": [
+                {"nutrient": {"number": "629", "id": 1278, "name": "PUFA 20:5 n-3 (EPA)", "unitName": "g"}, "amount": 1},
+                {"nutrient": {"number": "621", "id": 1272, "name": "PUFA 22:6 n-3 (DHA)", "unitName": "g"}, "amount": 0.9},
+            ],
+        },
+    )
+    meal = ParsedMeal(
+        raw_text="chia and salmon",
+        date=date(2026, 6, 24),
+        items=[
+            ParsedItem(food_alias="chia", quantity_g=10),
+            ParsedItem(food_alias="salmon", quantity_g=100),
+        ],
+    )
+    commit_meal(conn, meal, "2026-06-24", [(meal.items[0], 1, 10), (meal.items[1], 2, 100)])
+
+    report = load_report(conn, date(2026, 6, 24), date(2026, 6, 24))
+
+    assert round(report.totals["619"], 3) == 1.783
+    assert round(report.totals["646"], 2) == 2.37
+    assert round(report.totals["EPA_DHA"], 2) == 1.9
+    assert report.coverage["EPA_DHA"].known_items == 1
+
+
+def test_healthy_fat_notes_fallback_when_detailed_data_is_missing(tmp_path):
+    conn = connect(tmp_path / "nutrition.db")
+    init_db(conn)
+    upsert_food_detail(
+        conn,
+        {
+            "fdcId": 1,
+            "description": "Chicken, cooked",
+            "foodNutrients": [
+                {"nutrient": {"number": "204", "id": 1004, "name": "Total lipid (fat)", "unitName": "g"}, "amount": 10},
+            ],
+        },
+    )
+    meal = ParsedMeal(
+        raw_text="chicken and rice",
+        date=date(2026, 6, 24),
+        items=[ParsedItem(food_alias="chicken", quantity_g=200)],
+    )
+    commit_meal(conn, meal, "2026-06-24", [(meal.items[0], 1, 200)])
+    report = load_report(conn, date(2026, 6, 24), date(2026, 6, 24))
+
+    notes = healthy_fat_notes(report, build_targets(None, date(2026, 6, 24)))
+
+    assert any("No vino data detallada" in note for note in notes)
+    assert any("no detecte una fuente obvia de omega-3" in note for note in notes)
+
+
+def test_healthy_fat_notes_do_not_override_numeric_omega_data(tmp_path):
+    conn = connect(tmp_path / "nutrition.db")
+    init_db(conn)
+    upsert_food_detail(
+        conn,
+        {
+            "fdcId": 1,
+            "description": "Generic capsule",
+            "foodNutrients": [
+                {"nutrient": {"number": "629", "id": 1278, "name": "PUFA 20:5 n-3 (EPA)", "unitName": "g"}, "amount": 2},
+                {"nutrient": {"number": "621", "id": 1272, "name": "PUFA 22:6 n-3 (DHA)", "unitName": "g"}, "amount": 3},
+                {
+                    "nutrient": {
+                        "number": "645",
+                        "id": 1292,
+                        "name": "Fatty acids, total monounsaturated",
+                        "unitName": "g",
+                    },
+                    "amount": 30,
+                },
+                {
+                    "nutrient": {
+                        "number": "646",
+                        "id": 1293,
+                        "name": "Fatty acids, total polyunsaturated",
+                        "unitName": "g",
+                    },
+                    "amount": 60,
+                },
+            ],
+        },
+    )
+    meal = ParsedMeal(
+        raw_text="generic capsule",
+        date=date(2026, 6, 24),
+        items=[ParsedItem(food_alias="generic capsule", quantity_g=10)],
+    )
+    commit_meal(conn, meal, "2026-06-24", [(meal.items[0], 1, 10)])
+    report = load_report(conn, date(2026, 6, 24), date(2026, 6, 24))
+
+    notes = healthy_fat_notes(report, build_targets(None, date(2026, 6, 24)))
+
+    assert not any("no detecte una fuente obvia de omega-3" in note for note in notes)
+    assert not any("tampoco detecte un ancla clara" in note for note in notes)
+
+
+def test_local_label_payload_accepts_detailed_fats():
+    payload = label_food_payload(
+        fdc_id=9_000_001,
+        name="Test omega label",
+        serving_g=10,
+        calories=None,
+        protein=None,
+        fat=1,
+        saturated_fat=0.1,
+        trans_fat=0,
+        cholesterol=5,
+        carbs=None,
+        fiber=None,
+        sodium=None,
+        linoleic_acid=0.2,
+        ala=0.3,
+        epa=0.04,
+        dha=0.05,
+        dpa=0.01,
+        mufa=0.4,
+        pufa=0.6,
+        default_quantity_g=None,
+    )
+
+    nutrients = {
+        nutrient["nutrient"]["number"]: nutrient["amount"]
+        for nutrient in payload["foodNutrients"]
+    }
+
+    assert nutrients["629"] == 0.4
+    assert nutrients["621"] == 0.5
+    assert nutrients["645"] == 4
+    assert nutrients["646"] == 6
 
 
 def test_profile_roundtrip(tmp_path):
