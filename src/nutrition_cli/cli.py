@@ -486,12 +486,19 @@ def label_add(
     pufa: float | None = typer.Option(None, help="Polyunsaturated fat grams per serving."),
     default_quantity_g: float | None = typer.Option(None, help="Default grams when logged without quantity."),
     source_ref: str | None = typer.Option(None, help="Optional label evidence reference, such as a photo path or URL."),
+    source_type: str = typer.Option(
+        "local-label",
+        help="Evidence type for the audit trail, e.g. local-label, web-label, product-page.",
+    ),
     label_text: str | None = typer.Option(None, help="Optional raw label text or notes."),
     alias: list[str] = typer.Option([], "--alias", "-a", help="Alias to create. Can be repeated."),
     db: Path = typer.Option(default_factory=db_option, help="SQLite database path."),
 ) -> None:
-    """Add a local food from package label values."""
+    """Add a local food from package or web label values."""
     conn = open_db(db)
+    source_type = source_type.strip()
+    if not source_type:
+        raise typer.BadParameter("source-type cannot be empty.")
     fdc_id = next_local_food_id(conn)
     payload = label_food_payload(
         fdc_id=fdc_id,
@@ -519,7 +526,7 @@ def label_add(
     add_food_source(
         conn,
         fdc_id=fdc_id,
-        source_type="local-label",
+        source_type=source_type,
         source_ref=source_ref,
         label_text=label_text or label_text_from_args(
             serving_g=serving_g,
@@ -550,18 +557,18 @@ def label_add(
             alias_name,
             fdc_id,
             default_quantity_g=default_quantity_g,
-            notes=f"Local label: {name}",
-            reason="local label add",
+            notes=f"{source_type}: {name}",
+            reason=f"{source_type} add",
         )
         log_resolution_event(
             conn,
             alias=alias_name,
-            source="local-label",
+            source=source_type,
             chosen_fdc_id=fdc_id,
             chosen_description=name,
-            reason=f"Local label: {name}",
+            reason=f"{source_type}: {name}",
         )
-    console.print(f"Added local label food [bold]{name}[/] as {fdc_id}.")
+    console.print(f"Added {source_type} food [bold]{name}[/] as {fdc_id}.")
 
 
 @audit_app.command("log")

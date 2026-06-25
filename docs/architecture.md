@@ -26,10 +26,18 @@ not invent numeric nutrient values. When nutrient data is missing or partial, th
 assistant should still take a clearly labeled position using nutrition knowledge
 or research; that judgment belongs in prose, not in numeric totals.
 
-Nutrient amounts come from cached FoodData Central detail responses or from local rows manually inserted by the user.
-Packaged-product labels should be added to the local SQLite database with
-`nutrition label add`; user-specific products should not be committed to the
-repository seed data.
+Nutrient amounts come from cached FoodData Central detail responses or from
+local rows manually inserted by the user. Packaged-product labels should be
+added to the local SQLite database with `nutrition label add`; user-specific
+products should not be committed to the repository seed data.
+
+When a user names a specific branded product, the assistant should look for
+product-level evidence before accepting a generic USDA mapping. The preferred
+source order is manufacturer page, retailer product page, barcode/product
+database, user-provided package photo, then generic USDA fallback. Any web or
+package source used for numeric values should be stored in `food_sources`
+through `nutrition label add --source-ref ... --source-type web-label` or
+`--source-type product-page`.
 
 Profile fields such as birth date, sex/gender target category, height, weight,
 and activity level are also local runtime data. They belong in `user_profiles`
@@ -76,7 +84,8 @@ Missing values are not imputed into numeric totals. The safe hierarchy is:
 
 1. Use complete USDA generic foods for nutrient-rich analysis.
 2. Use branded foods and labels for product identity and label nutrients.
-3. Add package-label foods locally when the user has the label.
+3. Add package labels or online product labels locally when they are the best
+   product-specific source.
 4. Add optional product/barcode sources, such as Open Food Facts, only as another
    source with explicit coverage and provenance.
 5. Require the assistant to address every important unknown/partial nutrient in

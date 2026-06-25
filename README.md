@@ -134,6 +134,19 @@ The CLI is deliberately not the final narrator. It gives the assistant a
 structured evidence packet; the assistant is responsible for noticing when the
 evidence is incomplete, suspicious, or inconsistent with the user's description.
 
+For specific branded products, the assistant should try to get product-level
+evidence before mapping to a generic USDA food. A phrase like "300 g of Brand X
+mozzarella" should trigger a quick product search when internet access is
+available:
+
+1. Check existing aliases and `nutrition audit sources`.
+2. Search for the brand/product nutrition label online.
+3. Prefer the manufacturer's product page; use retailer pages, barcode/product
+   databases, or user package photos as secondary evidence.
+4. If a matching label is found, save it locally with `nutrition label add` and
+   a `--source-ref` URL or file path.
+5. If only a generic food is available, say that the mapping is approximate.
+
 When using this repo with an LLM assistant, the assistant should start by checking:
 
 ```bash
@@ -198,6 +211,8 @@ Food nutrient values come from:
 - [USDA FoodData Central](https://fdc.nal.usda.gov/) detail responses, cached in
   SQLite per food.
 - Local package labels added by the user with `nutrition label add`.
+- Public product pages or online nutrition labels found by the assistant and
+  saved locally with `nutrition label add --source-type web-label`.
 
 The LLM assistant can help structure what the user ate, but it should not invent
 numeric nutrient values. Reports multiply cached nutrient values per 100 g by
@@ -277,7 +292,8 @@ Current strategy for missing nutrient data:
 - Use USDA Branded Foods and package labels for packaged products, but expect
   them to be label-like and often incomplete for micronutrients.
 - Use `nutrition label add` for local products when the package label is the
-  best source.
+  best source. For brand/product pages found online, include `--source-type
+  web-label` or `--source-type product-page` plus the URL in `--source-ref`.
 - Consider barcode/product sources such as
   [Open Food Facts](https://openfoodfacts.github.io/openfoodfacts-server/api/)
   as a future fallback for packaged foods, especially outside the U.S. These
@@ -370,6 +386,23 @@ uv run nutrition label add "my canned corn" \
   --alias "my corn can"
 ```
 
+Add a branded product from an online nutrition label:
+
+```bash
+uv run nutrition label add "brand mozzarella" \
+  --serving-g 30 \
+  --calories 94 \
+  --protein 7.3 \
+  --carbs 0 \
+  --fat 7.2 \
+  --saturated-fat 4.4 \
+  --trans-fat 0.4 \
+  --sodium 176 \
+  --source-type web-label \
+  --source-ref "https://example.com/product-page" \
+  --alias "brand mozzarella"
+```
+
 Local labels can also store detailed fats when available:
 
 ```bash
@@ -399,7 +432,7 @@ The local database stores enough detail to review how a meal became nutrients:
   including candidate JSON when USDA search was used.
 - `foods.raw_json` stores the raw USDA/local food payload used for nutrients.
 - `food_sources` stores explicit source/evidence records for local labels, such
-  as a package-photo path or source URL.
+  as a package-photo path, product-page URL, or online nutrition-label URL.
 
 Useful audit commands:
 

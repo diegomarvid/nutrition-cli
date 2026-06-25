@@ -53,15 +53,21 @@ When the user tells you what they ate:
    CLI.
 4. Reuse local aliases/default portions before asking the user to repeat known
    product details.
-5. If the user provides a package label, add it with `nutrition label add` and
-   include source/evidence when possible.
-6. Check preferences before giving suggestions:
+5. If the user names a specific branded/local product, search for product-level
+   nutrition evidence before falling back to a generic USDA food. Prefer the
+   manufacturer's product page, then retailer product pages, barcode/product
+   databases, or package photos from the user.
+6. If product-level evidence is found, add it with `nutrition label add` and
+   include source/evidence. Use `--source-type web-label` for nutrition tables
+   found online, `--source-type product-page` for product pages without a full
+   label, and `--source-type local-label` for user-provided package labels.
+7. Check preferences before giving suggestions:
 
 ```bash
 uv run nutrition preference list
 ```
 
-7. After logging, run the relevant report:
+8. After logging, run the relevant report:
 
 ```bash
 uv run nutrition day --date YYYY-MM-DD
@@ -91,6 +97,10 @@ report, do a final consistency pass:
 - Check whether the chosen food mapping is plausible. A generic USDA food can be
   close enough, but branded foods, package labels, cooked/raw swaps, bones,
   drained weights, and household portions can materially change the result.
+- For branded products, check whether `nutrition audit sources` has a product
+  page, web label, barcode/database record, or package-photo source. If not,
+  do a web/product search when internet access is available and store the result
+  locally before reusing it.
 - Check coverage. A status with `?`, `unknown`, or low Data coverage is not as
   strong as a fully covered measured value.
 - Check outliers. Very high calories, sodium, fat, protein, or surprisingly high
@@ -152,6 +162,23 @@ uv run nutrition audit sources
 
 If an alias or product mapping is wrong, correct it in the local DB and explain
 that future logs will reuse the corrected mapping.
+
+For a specific branded product, preserve provenance:
+
+```bash
+uv run nutrition label add "brand product name" \
+  --serving-g 30 \
+  --calories 94 \
+  --protein 7.3 \
+  --fat 7.2 \
+  --source-type web-label \
+  --source-ref "https://example.com/product-page" \
+  --alias "user phrase for this product"
+```
+
+If sources disagree, prefer the manufacturer label when it clearly matches the
+product, mention the discrepancy in prose, and keep the chosen source in
+`food_sources`.
 
 ## Preferences
 

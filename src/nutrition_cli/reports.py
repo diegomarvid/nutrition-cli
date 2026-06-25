@@ -398,7 +398,8 @@ def has_missing_or_partial_coverage(report: Report) -> bool:
 def assistant_handoff_lines(report: Report) -> list[str]:
     lines = [
         "Assistant handoff: use this table as evidence, not as the final answer. "
-        "Sanity-check quantities, food mappings, coverage, and suspicious outliers before summarizing."
+        "Sanity-check quantities, food mappings, branded-product sources, coverage, "
+        "and suspicious outliers before summarizing."
     ]
     if has_missing_or_partial_coverage(report):
         lines.append(
